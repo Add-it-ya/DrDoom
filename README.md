@@ -21,7 +21,7 @@ authorises it — with the decision written to an append-only audit log.
 |---|---|
 | Project foundations | Done |
 | Data pipeline | Done |
-| Anomaly detection | Not started |
+| Anomaly detection | Done |
 | Root-cause classification | Not started |
 | Retrieval | Not started |
 | Agent orchestration | Not started |
@@ -41,8 +41,35 @@ python -m drdoom.data.build
 
 ## Results
 
-Populated as each layer lands. Every metric is reported at incident level with
-confidence intervals, alongside the simple baselines it is measured against.
+Every metric is reported at incident level with 95% bootstrap confidence intervals,
+alongside the simple baselines it is measured against. Full tables in
+[docs/detection-results.md](docs/detection-results.md).
+
+### Detection
+
+Baselines were built before the network so the comparison could actually be made, and
+thresholds are chosen on validation against a false alarm budget of one page per
+series-day, then applied unchanged to test.
+
+| Dataset | Best detector | Detection rate | Minutes to detect | Alarms/day |
+|---|---|---:|---:|---:|
+| Real, unseen machines | `ewma_residual` | 0.752 | 8.5 | 1.65 |
+| Real, future incidents | `window_spread` | 0.782 | 8.0 | 0.92 |
+| Synthetic, unseen services | `lstm_autoencoder` | 1.000 | 15.0 | 1.16 |
+
+The autoencoder wins on synthetic data and **loses to a one-line statistic on real
+data**, where it trails the best baseline by 0.15 to 0.20 detection rate while raising
+more false alarms. That result is published rather than buried: it is the reason the
+baselines exist, and the reason the shipped default on real telemetry is not the
+neural network.
+
+Results here are not point-adjusted. Much of the published work on this benchmark
+credits a whole anomaly segment as detected when any single point inside it fires,
+which inflates F1 and is not comparable to these numbers.
+
+```bash
+python -m drdoom.detect.compare
+```
 
 ## Getting started
 
