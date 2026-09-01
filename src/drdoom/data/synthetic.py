@@ -6,8 +6,10 @@ headline benchmark, and results from it are reported separately.
 
 Two properties are deliberate:
 
-* Root causes are assigned round-robin rather than sampled, so no split can end up
-  missing a class and no tuning objective is blind to part of the label space.
+* Root causes are assigned round-robin for global balance and then shuffled within a
+  scenario, so cause is independent of position in time. Assigning them in order makes a
+  chronological split correlate cause with split, which is how a class disappears from
+  test entirely and a tuning objective ends up blind to part of the label space.
 * Severity is drawn across a range that includes near-threshold events. Anomalies large
   enough for any detector to catch make every detector look equally good and tell you
   nothing about which one to ship.
@@ -116,8 +118,14 @@ def generate_scenario(
     events: list[AnomalyEvent] = []
     point_labels = np.zeros(n_points, dtype=np.int8)
 
+    # Causes are drawn round-robin for global balance, then shuffled so that a cause is
+    # independent of where its event falls in time. Without the shuffle, a chronological
+    # split correlates cause with split and some classes vanish from test entirely.
+    causes = [ROOT_CAUSES[(cause_offset + i) % len(ROOT_CAUSES)] for i in range(len(starts))]
+    rng.shuffle(causes)
+
     for offset, start in enumerate(starts):
-        cause = ROOT_CAUSES[(cause_offset + offset) % len(ROOT_CAUSES)]
+        cause = causes[offset]
         duration = int(rng.integers(min_duration, max_duration))
         end = min(start + duration, n_points)
         if end - start < min_duration:
