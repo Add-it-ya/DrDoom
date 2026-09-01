@@ -20,13 +20,24 @@ authorises it — with the decision written to an append-only audit log.
 | Component | State |
 |---|---|
 | Project foundations | Done |
-| Data pipeline | Not started |
+| Data pipeline | Done |
 | Anomaly detection | Not started |
 | Root-cause classification | Not started |
 | Retrieval | Not started |
 | Agent orchestration | Not started |
 | Approval gate and audit | Not started |
 | API and dashboard | Not started |
+
+## Data
+
+Real telemetry from the Server Machine Dataset (28 machines, 38 metrics) as the primary
+benchmark, with a synthetic generator alongside it for controlled experiments where a
+known root cause and a severity dial are needed. See
+[docs/dataset.md](docs/dataset.md) for the full composition.
+
+```bash
+python -m drdoom.data.build
+```
 
 ## Results
 
