@@ -7,6 +7,9 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Aditya Raj", email = "skrair36@gmail.com" }]
 dependencies = [
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "pyarrow>=17,<23",
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
 ]
@@ -37,3 +40,6 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "PTH", "RUF"]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 pythonpath = ["src"]
+markers = [
+    "requires_dataset: needs the downloaded Server Machine Dataset on disk",
+]
