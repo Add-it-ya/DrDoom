@@ -1,0 +1,30 @@
+# Environment
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Data and model artefacts, regenerable from source
+data/raw/
+data/processed/
+models/
+*.pt
+*.npz
+
+# Generated output
+reports/
+audit.log
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
