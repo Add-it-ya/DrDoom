@@ -214,12 +214,33 @@ A sentence can reuse the context's words and still be wrong, and a correct parap
 scores lower than it deserves. Read it as *how much of this answer is traceable to its
 sources* — the question worth asking of a machine-written diagnosis — not as a truth score.
 
+| Measure | Score | Floor |
+|---|---:|---:|
+| retrieval hit@5 | 0.850 | 0.75 |
+| diagnosis retrieved the right document | 0.600 | 0.50 |
+| groundedness | 0.594 | 0.50 |
+| supported sentence fraction | 0.494 | 0.40 |
+| structured output parsed | 1.000 | 1.00 |
+
+Full report in [docs/eval-results.md](docs/eval-results.md). Floors sit *below* the
+measured baseline on purpose — a floor set from an aspiration makes the suite permanently
+red and therefore ignored.
+
+The suite's most useful finding was about itself. An early version scored lexical
+retrieval alone and reported numbers the deployed system would never produce. Symptom
+descriptions are the case that separates them: *"services cannot resolve each other by
+name"* shares no vocabulary with the page about DNS, so BM25 answered it with Vertical Pod
+Autoscaling. Evaluating the shipped hybrid retriever instead moved retrieval hit@5 from
+0.725 to 0.850 and the diagnosis retrieval rate from 0.333 to 0.600.
+
 ```bash
 python -m drdoom.evals.run              # replay recorded responses
 python -m drdoom.evals.run --record     # refresh them against a live provider
 ```
 
-Token and estimated cost per incident are reported on every API response.
+Token counts are reported on every API response, with an estimated cost where the model's
+published rate has been checked. An unknown model reports tokens and no cost rather than a
+guessed figure.
 
 ### Model providers
 

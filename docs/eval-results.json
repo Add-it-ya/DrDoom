@@ -1,0 +1,223 @@
+{
+  "summary": {
+    "cases": 15,
+    "retrieval_hit_at_5": 0.85,
+    "retrieval_mrr": 0.6164583333333333,
+    "retrieval_queries": 40,
+    "diagnosis_retrieval_hit": 0.6,
+    "groundedness": 0.5935166826541363,
+    "supported_fraction": 0.49433862433862436,
+    "expected_terms_present": 0.6,
+    "parse_success": 1.0,
+    "degraded": 0,
+    "total_tokens": 25703
+  },
+  "cases": [
+    {
+      "case": "memory-oom",
+      "retrieved_expected": true,
+      "groundedness": 0.6614,
+      "supported_fraction": 0.5,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1825,
+      "unsupported": [
+        "Container memory usage increased over ~40 minutes and the process was terminated with exit code 137 (OOMKilled).",
+        "Out\u2011of\u2011memory condition caused by the container exceeding its memory limit (possible memory leak)."
+      ]
+    },
+    {
+      "case": "memory-namespace-cap",
+      "retrieved_expected": true,
+      "groundedness": 0.5547,
+      "supported_fraction": 0.5,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1524,
+      "unsupported": [
+        "The provided documentation does not describe symptoms of a memory leak, but it does describe mechanisms to restrict memory usage per namespace (minimum/maximum memory constraints, default memory requests/limits, and memory quotas).",
+        "Unconstrained memory usage in the namespace (e.g., pods without memory limits) leading to excessive consumption, which may appear as a memory leak."
+      ]
+    },
+    {
+      "case": "deploy-regression",
+      "retrieved_expected": false,
+      "groundedness": 0.6207,
+      "supported_fraction": 0.625,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1598,
+      "unsupported": [
+        "Error rate spiked after the recent release and remains high.",
+        "Review recent changes for readiness probes, image references, quota or permission changes."
+      ]
+    },
+    {
+      "case": "deploy-stuck",
+      "retrieved_expected": false,
+      "groundedness": 0.6938,
+      "supported_fraction": 0.7143,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1445,
+      "unsupported": [
+        "Stalled rollout due to exceeding .spec.progressDeadlineSeconds (default 10\u202fmin); common underlying reasons include readiness probe failures, image pull errors, quota or permission issues as listed in the documentation.",
+        "Resolve the root issue identified (fix probe, correct image, adjust quota/permissions)."
+      ]
+    },
+    {
+      "case": "deploy-surge",
+      "retrieved_expected": true,
+      "groundedness": 0.5686,
+      "supported_fraction": 0.25,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1639,
+      "unsupported": [
+        "During each deployment, a subset of requests fail while old pods are terminating.",
+        "This can reduce available capacity for new pods and cause request failures, especially if the deployment\u2019s max surge/unavailable settings are insufficient to mask the gap."
+      ]
+    },
+    {
+      "case": "traffic-spike-scale",
+      "retrieved_expected": false,
+      "groundedness": 0.5179,
+      "supported_fraction": 0.4,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1904,
+      "unsupported": [
+        "Queue depth and CPU are rising together as request volume doubles.",
+        "Verify the concurrency limits for the affected priority levels."
+      ]
+    },
+    {
+      "case": "traffic-spike-nodes",
+      "retrieved_expected": true,
+      "groundedness": 0.6952,
+      "supported_fraction": 0.6667,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1534,
+      "unsupported": [
+        "A traffic spike has increased overall cluster resource demand, exhausting available CPU/memory and causing insufficient capacity for new pods."
+      ]
+    },
+    {
+      "case": "unhealthy-pods",
+      "retrieved_expected": false,
+      "groundedness": 0.6103,
+      "supported_fraction": 0.6667,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 2170,
+      "unsupported": [
+        "Check that the kubelet marks the pod as terminating and updates the EndpointSlice; verify the pod's ready condition is set to false and that any load balancer respects the terminating state; review terminationGracePeriodSeconds and readiness probes; ensure the termination flow described in the documentation is correctly implemented."
+      ]
+    },
+    {
+      "case": "dns-failures",
+      "retrieved_expected": true,
+      "groundedness": 0.6202,
+      "supported_fraction": 0.6667,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1897,
+      "unsupported": [
+        "Intermittent DNS resolution failures between services; nslookup commands show inability to resolve 'kubernetes.default', indicating a CoreDNS or DNS configuration issue."
+      ]
+    },
+    {
+      "case": "service-unreachable",
+      "retrieved_expected": true,
+      "groundedness": 0.5526,
+      "supported_fraction": 0.4286,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1736,
+      "unsupported": [
+        "The Service proxy layer (kube\u2011proxy) is likely mis\u2011configured or not functioning correctly, possibly due to an incorrect hairpin\u2011mode setting that prevents Pods from reaching the Service IP.",
+        "Verify kube\u2011proxy is running on the nodes and inspect its logs for errors."
+      ]
+    },
+    {
+      "case": "pods-not-starting",
+      "retrieved_expected": true,
+      "groundedness": 0.6188,
+      "supported_fraction": 0.5556,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1715,
+      "unsupported": [
+        "The Deployment created a new ReplicaSet, but the Pods cannot start (commonly due to image pull failures or other startup errors).",
+        "Inspect the Pod description (`kubectl describe pod <pod>`) for image pull errors, missing secrets, or other startup failures."
+      ]
+    },
+    {
+      "case": "node-maintenance",
+      "retrieved_expected": false,
+      "groundedness": 0.5706,
+      "supported_fraction": 0.375,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1771,
+      "unsupported": [
+        "The node must be taken out of service while keeping traffic flowing.",
+        "Documentation recommends adding the taint `node.kubernetes.io/out-of-service` (with `NoExecute` or `NoSchedule`) after confirming the node is already shutting down, which forces pod deletion and immediate volume detachment so pods can be rescheduled elsewhere without traffic loss."
+      ]
+    },
+    {
+      "case": "eviction-storm",
+      "retrieved_expected": true,
+      "groundedness": 0.6559,
+      "supported_fraction": 0.6667,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1367,
+      "unsupported": [
+        "Node drain for the upgrade triggered pod evictions that exceeded the allowed disruption budget and the cluster lacked sufficient capacity to schedule replacement pods, leading to mass evictions."
+      ]
+    },
+    {
+      "case": "noisy-alerts",
+      "retrieved_expected": true,
+      "groundedness": 0.4176,
+      "supported_fraction": 0.0,
+      "has_expected_terms": true,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1689,
+      "unsupported": [
+        "The on-call rotation is being paged repeatedly for conditions that resolve themselves, likely due to transient latency spikes being reported as breaches.",
+        "According to the documentation, histogram-based latency estimates can over\u2011state the 95th\u2011percentile during sharp spikes (Excerpt\u202f[1]), and alerts that fire on high latency without considering overall user\u2011visible latency can generate unnecessary pages (Excerpt\u202f[2])."
+      ]
+    },
+    {
+      "case": "latency-percentiles",
+      "retrieved_expected": false,
+      "groundedness": 0.5443,
+      "supported_fraction": 0.4,
+      "has_expected_terms": false,
+      "parsed": true,
+      "degraded": false,
+      "tokens": 1889,
+      "unsupported": [
+        "Users report the service feels slow even though average latency metrics appear normal; a memory leak is detected, which can cause memory pressure and trigger swapping, leading to I/O latency degradation for system\u2011critical daemons.",
+        "Check current swap and memory usage on the affected nodes; if swap usage is high, reduce memory consumption (e.g., restart or limit the leaking process)."
+      ]
+    }
+  ]
+}
