@@ -78,6 +78,9 @@ class InvestigationState(TypedDict, total=False):
     report: str
     degraded: bool
     tokens: Annotated[int, operator.add]
+    input_tokens: Annotated[int, operator.add]
+    output_tokens: Annotated[int, operator.add]
+    model: str
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,17 @@ class Investigation:
     @property
     def tokens(self) -> int:
         return int(self.state.get("tokens", 0))
+
+    @property
+    def usage(self) -> dict[str, Any]:
+        """Token and cost accounting for this incident."""
+        from drdoom.llm.pricing import describe
+
+        return describe(
+            self.state.get("model", "unknown"),
+            int(self.state.get("input_tokens", 0)),
+            int(self.state.get("output_tokens", 0)),
+        )
 
 
 class Investigator:
@@ -150,14 +164,14 @@ class Investigator:
             "diagnosis": outcome.diagnosis.model_dump(),
             "citations": [citation.model_dump() for citation in outcome.citations],
             "degraded": outcome.degraded,
-            "tokens": outcome.tokens,
+            **_usage(outcome.completions),
         }
 
     def _remediate_node(self, state: InvestigationState) -> dict:
         outcome = self.remediation.run(
             state["diagnosis"]["summary"], state["triage"].get("root_cause")
         )
-        return {"plan": outcome.plan.model_dump(), "tokens": outcome.tokens}
+        return {"plan": outcome.plan.model_dump(), **_usage(outcome.completions)}
 
     def _approval_node(self, state: InvestigationState) -> dict:
         """Decide, and on approval mint the token that authorises this exact plan."""
@@ -240,7 +254,7 @@ class Investigator:
         markdown = outcome.markdown
         if state.get("escalation"):
             markdown += f"\n> {state['escalation']}\n"
-        return {"report": markdown, "tokens": outcome.tokens}
+        return {"report": markdown, **_usage(outcome.completions)}
 
     @staticmethod
     def _route_after_triage(state: InvestigationState) -> str:
@@ -315,6 +329,8 @@ class Investigator:
             "symptoms": symptoms,
             "thread_id": thread_id,
             "tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
             "degraded": False,
         }
         return self._outcome(thread_id, self.graph.invoke(payload, config=self._config(thread_id)))
@@ -345,6 +361,8 @@ class Investigator:
             "symptoms": symptoms,
             "thread_id": thread_id,
             "tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
             "degraded": False,
         }
         yield from self._stream(payload, thread_id)
@@ -376,6 +394,16 @@ class Investigator:
                 thread_id, "awaiting_approval", values, dict(snapshot.interrupts[0].value)
             )
         return Investigation(thread_id, self._status(values), values)
+
+
+def _usage(completions: list) -> dict[str, Any]:
+    """Roll a node's completions into the counters the state accumulates."""
+    return {
+        "tokens": sum(c.total_tokens for c in completions),
+        "input_tokens": sum(c.input_tokens for c in completions),
+        "output_tokens": sum(c.output_tokens for c in completions),
+        "model": completions[0].model if completions else "unknown",
+    }
 
 
 def _public(update: Any) -> dict[str, Any]:

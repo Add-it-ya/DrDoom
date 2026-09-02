@@ -93,6 +93,7 @@ class InvestigationView(BaseModel):
     report: str | None = None
     degraded: bool = False
     tokens: int = 0
+    usage: dict[str, Any] | None = None
     awaiting: dict[str, Any] | None = None
 
     @classmethod
@@ -112,6 +113,7 @@ class InvestigationView(BaseModel):
             report=state.get("report"),
             degraded=bool(state.get("degraded", False)),
             tokens=investigation.tokens,
+            usage=investigation.usage,
             awaiting=investigation.pending,
         )
 
