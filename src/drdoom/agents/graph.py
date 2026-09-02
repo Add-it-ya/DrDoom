@@ -12,6 +12,11 @@ thread from where it stopped. Nothing is held in process memory between the two,
 restart, a deploy, or a second worker picking up the request all behave the same. That is
 the property a plain function call cannot offer, and the reason this is a graph at all.
 
+Approval and rejection lead to different places. An approved plan reaches an executor
+carrying a token issued at the moment of the decision; a rejected one is escalated and
+never reaches the executor at all. Both are written to the audit log, because a review
+needs to see the refusals as much as the actions.
+
 The state is deliberately plain json. A numpy array or a pydantic model in the state would
 serialise inconsistently or not at all; models are validated at the edges and stored as
 dictionaries.
@@ -24,7 +29,7 @@ import operator
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -38,15 +43,20 @@ from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.schemas import Citation, Diagnosis, RemediationPlan
 from drdoom.agents.triage import TriageAgent
+from drdoom.audit import AuditLog
 from drdoom.config import get_settings
+from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash
 
 logger = logging.getLogger(__name__)
 
-Status = Literal["no_incident", "awaiting_approval", "complete"]
+Status = Literal["no_incident", "awaiting_approval", "complete", "rejected"]
 
 AUTO_APPROVED = "auto_approved"
 APPROVED = "approved_by_human"
 REJECTED = "rejected_by_human"
+
+POLICY_PRINCIPAL = "policy:low_risk"
+UNKNOWN_PRINCIPAL = "unknown"
 
 
 class InvestigationState(TypedDict, total=False):
@@ -55,11 +65,16 @@ class InvestigationState(TypedDict, total=False):
     window: list[list[float]]
     feature_names: list[str]
     symptoms: str
+    thread_id: str
+    principal: str
     triage: dict[str, Any]
     diagnosis: dict[str, Any]
     citations: list[dict[str, Any]]
     plan: dict[str, Any]
     decision: str
+    approval: dict[str, Any]
+    execution: dict[str, Any]
+    escalation: str
     report: str
     degraded: bool
     tokens: Annotated[int, operator.add]
@@ -87,6 +102,14 @@ class Investigation:
         return self.state.get("report")
 
     @property
+    def execution(self) -> dict[str, Any] | None:
+        return self.state.get("execution")
+
+    @property
+    def executed(self) -> bool:
+        return bool((self.state.get("execution") or {}).get("executed", False))
+
+    @property
     def tokens(self) -> int:
         return int(self.state.get("tokens", 0))
 
@@ -101,11 +124,15 @@ class Investigator:
         remediation: RemediationAgent,
         reporting: ReportingAgent,
         checkpointer: SqliteSaver,
+        executor: DryRunExecutor | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         self.triage = triage
         self.diagnosis = diagnosis
         self.remediation = remediation
         self.reporting = reporting
+        self.executor = executor or DryRunExecutor()
+        self.audit = audit or AuditLog()
         self.graph = self._build().compile(checkpointer=checkpointer)
 
     # --- nodes ---------------------------------------------------------------------
@@ -133,37 +160,95 @@ class Investigator:
         return {"plan": outcome.plan.model_dump(), "tokens": outcome.tokens}
 
     def _approval_node(self, state: InvestigationState) -> dict:
-        plan = state["plan"]
-        if not plan["requires_approval"]:
+        """Decide, and on approval mint the token that authorises this exact plan."""
+        plan = RemediationPlan.model_validate(state["plan"])
+
+        if not plan.requires_approval:
             logger.info("plan is low risk, proceeding without a human")
-            return {"decision": AUTO_APPROVED}
+            token = ApprovalToken.issue(plan, POLICY_PRINCIPAL)
+            return {"decision": AUTO_APPROVED, "approval": asdict(token)}
 
         # Everything below this line runs only after a human answers. The graph
         # suspends here and the state is on disk until it does.
         answer = interrupt(
             {
                 "question": "Approve this remediation?",
-                "immediate_action": plan["immediate_action"],
-                "risk_level": plan["risk_level"],
-                "rollback": plan["rollback"],
+                "immediate_action": plan.immediate_action,
+                "risk_level": plan.risk_level,
+                "rollback": plan.rollback,
+                "plan_hash": plan_hash(plan),
             }
         )
-        decision = APPROVED if answer else REJECTED
-        logger.info("human decision recorded: %s", decision)
-        return {"decision": decision}
+        approved = bool(answer)
+        principal = state.get("principal", UNKNOWN_PRINCIPAL)
+        logger.info("human decision recorded: approved=%s by %s", approved, principal)
+
+        if not approved:
+            return {"decision": REJECTED}
+        return {"decision": APPROVED, "approval": asdict(ApprovalToken.issue(plan, principal))}
+
+    def _execute_node(self, state: InvestigationState) -> dict:
+        """Run the approved plan, and write what happened to the audit log."""
+        plan = RemediationPlan.model_validate(state["plan"])
+        approval = state.get("approval")
+        token = ApprovalToken(**approval) if approval else None
+
+        result = self.executor.execute(plan, token)
+        self.audit.record(
+            incident_id=state.get("thread_id", "") or "unknown",
+            principal=token.principal if token else UNKNOWN_PRINCIPAL,
+            decision=state["decision"],
+            risk_level=plan.risk_level,
+            immediate_action=plan.immediate_action,
+            plan_hash=plan_hash(plan),
+            executed=result.executed,
+            execution=result.summary,
+        )
+        return {"execution": result.as_dict()}
+
+    def _escalate_node(self, state: InvestigationState) -> dict:
+        """A rejection is a decision with consequences, not a quiet ending."""
+        plan = RemediationPlan.model_validate(state["plan"])
+        principal = state.get("principal", UNKNOWN_PRINCIPAL)
+        message = (
+            f"Remediation rejected by {principal}. Nothing was executed. "
+            "The incident remains open and is escalated to the on-call engineer."
+        )
+        self.audit.record(
+            incident_id=state.get("thread_id", "") or "unknown",
+            principal=principal,
+            decision=REJECTED,
+            risk_level=plan.risk_level,
+            immediate_action=plan.immediate_action,
+            plan_hash=plan_hash(plan),
+            executed=False,
+            execution="nothing was executed (rejected)",
+        )
+        logger.warning("incident escalated after rejection")
+        return {"escalation": message, "execution": {"executed": False, "kind": "rejected"}}
 
     def _report_node(self, state: InvestigationState) -> dict:
         diagnosis = Diagnosis.model_validate(state["diagnosis"])
         plan = RemediationPlan.model_validate(state["plan"])
         citations = [Citation.model_validate(item) for item in state.get("citations", [])]
+        execution = state.get("execution") or {}
+        executed = execution.get("command") if execution.get("executed") else None
+
         outcome = self.reporting.run(
-            diagnosis, plan, state["decision"], executed=None, citations=citations
+            diagnosis, plan, state["decision"], executed=executed, citations=citations
         )
-        return {"report": outcome.markdown, "tokens": outcome.tokens}
+        markdown = outcome.markdown
+        if state.get("escalation"):
+            markdown += f"\n> {state['escalation']}\n"
+        return {"report": markdown, "tokens": outcome.tokens}
 
     @staticmethod
     def _route_after_triage(state: InvestigationState) -> str:
         return "diagnose" if state["triage"]["is_anomaly"] else END
+
+    @staticmethod
+    def _route_after_approval(state: InvestigationState) -> str:
+        return "escalate" if state["decision"] == REJECTED else "execute"
 
     # --- wiring --------------------------------------------------------------------
 
@@ -173,6 +258,8 @@ class Investigator:
         graph.add_node("diagnose", self._diagnose_node)
         graph.add_node("remediate", self._remediate_node)
         graph.add_node("approval", self._approval_node)
+        graph.add_node("execute", self._execute_node)
+        graph.add_node("escalate", self._escalate_node)
         graph.add_node("report", self._report_node)
 
         graph.add_edge(START, "triage")
@@ -181,7 +268,11 @@ class Investigator:
         )
         graph.add_edge("diagnose", "remediate")
         graph.add_edge("remediate", "approval")
-        graph.add_edge("approval", "report")
+        graph.add_conditional_edges(
+            "approval", self._route_after_approval, {"execute": "execute", "escalate": "escalate"}
+        )
+        graph.add_edge("execute", "report")
+        graph.add_edge("escalate", "report")
         graph.add_edge("report", END)
         return graph
 
@@ -202,8 +293,13 @@ class Investigator:
                 state=clean,
                 pending=dict(interrupts[0].value),
             )
-        status: Status = "complete" if clean.get("report") else "no_incident"
-        return Investigation(thread_id=thread_id, status=status, state=clean)
+        return Investigation(thread_id=thread_id, status=self._status(clean), state=clean)
+
+    @staticmethod
+    def _status(state: dict[str, Any]) -> Status:
+        if not state.get("report"):
+            return "no_incident"
+        return "rejected" if state.get("decision") == REJECTED else "complete"
 
     def start(
         self,
@@ -217,13 +313,17 @@ class Investigator:
             "window": np.asarray(window, dtype=np.float32).tolist(),
             "feature_names": feature_names or list(self.triage.feature_names),
             "symptoms": symptoms,
+            "thread_id": thread_id,
             "tokens": 0,
             "degraded": False,
         }
         return self._outcome(thread_id, self.graph.invoke(payload, config=self._config(thread_id)))
 
-    def resume(self, thread_id: str, approved: bool) -> Investigation:
+    def resume(
+        self, thread_id: str, approved: bool, principal: str = UNKNOWN_PRINCIPAL
+    ) -> Investigation:
         """Answer a suspended investigation and run it to completion."""
+        self.graph.update_state(self._config(thread_id), {"principal": principal})
         result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
         return self._outcome(thread_id, result)
 
@@ -231,12 +331,11 @@ class Investigator:
         """Read a thread without advancing it."""
         snapshot = self.graph.get_state(self._config(thread_id))
         values = dict(snapshot.values or {})
-        pending = None
         if snapshot.interrupts:
-            pending = dict(snapshot.interrupts[0].value)
-            return Investigation(thread_id, "awaiting_approval", values, pending)
-        status: Status = "complete" if values.get("report") else "no_incident"
-        return Investigation(thread_id, status, values)
+            return Investigation(
+                thread_id, "awaiting_approval", values, dict(snapshot.interrupts[0].value)
+            )
+        return Investigation(thread_id, self._status(values), values)
 
 
 def checkpoint_path() -> Path:
