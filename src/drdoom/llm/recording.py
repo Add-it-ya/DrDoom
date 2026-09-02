@@ -43,13 +43,33 @@ def request_key(
 
 
 class SnapshotStore:
-    """One json file per recorded response, named by its request key."""
+    """One json file per recorded response, named by its request key.
+
+    A manifest records which model produced the set. Without it, replay has to guess the
+    model that goes into the key, guesses wrong, misses every lookup, and the pipeline
+    degrades quietly to its no-model path -- which scores badly and looks like a quality
+    regression rather than a configuration mistake.
+    """
+
+    MANIFEST = "manifest.json"
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
 
     def path_for(self, key: str) -> Path:
         return self.directory / f"{key}.json"
+
+    def recorded_model(self) -> str | None:
+        manifest = self.directory / self.MANIFEST
+        if not manifest.is_file():
+            return None
+        return json.loads(manifest.read_text(encoding="utf-8")).get("model")
+
+    def set_recorded_model(self, model: str) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        (self.directory / self.MANIFEST).write_text(
+            json.dumps({"model": model}, indent=2), encoding="utf-8"
+        )
 
     def read(self, key: str) -> Completion | None:
         path = self.path_for(key)
@@ -82,7 +102,9 @@ class SnapshotStore:
         )
 
     def __len__(self) -> int:
-        return len(list(self.directory.glob("*.json"))) if self.directory.is_dir() else 0
+        if not self.directory.is_dir():
+            return 0
+        return len([p for p in self.directory.glob("*.json") if p.name != self.MANIFEST])
 
 
 class RecordingProvider:
@@ -98,6 +120,7 @@ class RecordingProvider:
     def complete(self, messages: list[Message], **kwargs) -> Completion:
         completion = self.inner.complete(messages, **kwargs)
         key = request_key(self.model, messages, kwargs.get("system"), kwargs.get("json_schema"))
+        self.store.set_recorded_model(self.model)
         self.store.write(key, completion, note=self.note)
         logger.info("recorded %s", key)
         return completion
@@ -106,10 +129,12 @@ class RecordingProvider:
 class ReplayProvider:
     """Serves recorded responses, and refuses to invent one it does not have."""
 
-    def __init__(self, store: SnapshotStore, model: str = "replay") -> None:
+    def __init__(self, store: SnapshotStore, model: str | None = None) -> None:
         self.store = store
         self.name = "replay"
-        self.model = model
+        # The model is part of the request key, so it has to be the one that was
+        # recorded rather than a placeholder.
+        self.model = model or store.recorded_model() or "replay"
         self.misses: list[str] = []
 
     def complete(self, messages: list[Message], **kwargs) -> Completion:
