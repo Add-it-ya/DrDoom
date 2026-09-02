@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1219,
+  "output_tokens": 470,
+  "text": "{\"summary\":\"The on-call rotation is being paged repeatedly for conditions that resolve themselves, likely due to transient latency spikes being reported as breaches.\",\"likely_cause\":\"According to the documentation, histogram-based latency estimates can over\u2011state the 95th\u2011percentile during sharp spikes (Excerpt\u202f[1]), and alerts that fire on high latency without considering overall user\u2011visible latency can generate unnecessary pages (Excerpt\u202f[2]). This combination can cause alerts to trigger on brief, self\u2011resolving traffic spikes.\",\"confidence\":\"medium\",\"next_action\":\"Review the latency alert definitions: switch from native histogram estimates to summary\u2011based quantile calculations or adjust histogram bucket boundaries to reduce estimation error; and modify alerts to fire only on user\u2011visible latency breaches as recommended in the alerting guidance (Excerpt\u202f[2]).\"}"
+}

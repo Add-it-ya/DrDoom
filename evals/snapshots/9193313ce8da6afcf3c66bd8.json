@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1234,
+  "output_tokens": 300,
+  "text": "{\n  \"summary\": \"Pods are stuck in Pending because the scheduler cannot find a node with enough CPU or memory to satisfy their resource requests.\",\n  \"likely_cause\": \"A traffic spike has increased overall cluster resource demand, exhausting available CPU/memory and causing insufficient capacity for new pods.\",\n  \"confidence\": \"medium\",\n  \"next_action\": \"Run `kubectl describe pod <pod>` to confirm the Insufficient cpu/memory messages, then either reduce the pod resource requests, delete or evict low\u2011priority pods, or add capacity (e.g., scale up the node pool or enable node autoscaling).\"\n}"
+}

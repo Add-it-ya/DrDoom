@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1420,
+  "output_tokens": 484,
+  "text": "{\"summary\":\"Queue depth and CPU are rising together as request volume doubles. Documentation notes that when inbound request volume for a priority level exceeds its concurrency limit, excess requests are placed in a queue using the fair\u2011queuing algorithm, which can cause queue length to grow and increase CPU load as the apiserver processes more queued work.\",\"likely_cause\":\"traffic_spike causing request volume to exceed the configured concurrency limit, leading to queuing of excess requests (PriorityLevelConfiguration type Queue)\",\"confidence\":\"medium\",\"next_action\":\"Monitor the flow\u2011control metrics (e.g., apiserver_flowcontrol_request_queue_length_after_enqueue, apiserver_flowcontrol_seat_utilization, apiserver_flowcontrol_priority_level_request_utilization). Verify the concurrency limits for the affected priority levels. If queue growth persists, consider adjusting the concurrency limits or changing the PriorityLevelConfiguration type to Reject for excess traffic, and review FlowSchema definitions to ensure fair distribution across flows.\"}"
+}

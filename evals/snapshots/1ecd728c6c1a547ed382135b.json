@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1063,
+  "output_tokens": 304,
+  "text": "{\n  \"summary\":\"During a cluster upgrade many replicas were evicted simultaneously, causing disruption to the workload.\",\n  \"likely_cause\":\"Node drain for the upgrade triggered pod evictions that exceeded the allowed disruption budget and the cluster lacked sufficient capacity to schedule replacement pods, leading to mass evictions.\",\n  \"confidence\":\"medium\",\n  \"next_action\":\"Add additional node capacity to the cluster, verify and adjust PodDisruptionBudgets to allow controlled evictions, and re\u2011run the upgrade after ensuring enough resources for replacement pods.\"\n}"
+}

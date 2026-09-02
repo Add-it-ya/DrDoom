@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1099,
+  "output_tokens": 425,
+  "text": "{\"summary\":\"A single namespace is using all available cluster memory. The provided documentation does not describe symptoms of a memory leak, but it does describe mechanisms to restrict memory usage per namespace (minimum/maximum memory constraints, default memory requests/limits, and memory quotas).\",\"likely_cause\":\"Unconstrained memory usage in the namespace (e.g., pods without memory limits) leading to excessive consumption, which may appear as a memory leak.\",\"confidence\":\"low\",\"next_action\":\"1. Review the namespace's pod specifications for missing memory requests/limits.\\n2. Apply a Minimum and Maximum Memory Constraint for the namespace (see docs excerpt [1] and [5]).\\n3. Configure Default Memory Requests and Limits for the namespace (see docs excerpt [2] and [4]).\\n4. Set a Memory Quota for the namespace to cap total memory usage (see docs excerpt [2] and [5]).\\n5. After applying constraints, monitor memory consumption to verify the issue is mitigated.\"}"
+}

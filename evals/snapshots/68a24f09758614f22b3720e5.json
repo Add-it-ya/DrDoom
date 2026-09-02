@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1283,
+  "output_tokens": 432,
+  "text": "{\"summary\":\"New pods created by the updated Deployment are not becoming Ready and remain stuck (e.g., ImagePullBackOff), preventing the rollout from completing.\",\"likely_cause\":\"The Deployment created a new ReplicaSet, but the Pods cannot start (commonly due to image pull failures or other startup errors). The Deployment controller halts scaling of the new ReplicaSet until the Pods become Ready, leaving the rollout in a non\u2011progressing state.\",\"confidence\":\"high\",\"next_action\":\"1. Run `kubectl get pods` and note the STATUS of the new pods (e.g., ImagePullBackOff). 2. Run `kubectl describe deployment <name>` to see the rollout condition and any events. 3. Inspect the Pod description (`kubectl describe pod <pod>`) for image pull errors, missing secrets, or other startup failures. 4. Fix the underlying issue (correct image name/tag, registry credentials, network access). 5. If needed, trigger a rollback (`kubectl rollout undo deployment/<name>`) or pause/resume the rollout while fixing. 6. Verify progress with `kubectl rollout status deployment/<name>` after remediation.\"}"
+}

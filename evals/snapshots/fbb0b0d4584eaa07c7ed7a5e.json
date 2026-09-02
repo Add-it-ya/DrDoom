@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1452,
+  "output_tokens": 437,
+  "text": "{\"summary\":\"Users report the service feels slow even though average latency metrics appear normal; a memory leak is detected, which can cause memory pressure and trigger swapping, leading to I/O latency degradation for system\u2011critical daemons.\",\"likely_cause\":\"Memory pressure from a leak causing swap activity that increases I/O latency for the service (see Swap memory management guidance).\",\"confidence\":\"medium\",\"next_action\":\"Check current swap and memory usage on the affected nodes; if swap usage is high, reduce memory consumption (e.g., restart or limit the leaking process). Apply I/O latency prioritization for system daemons as recommended: for systemd, set io.latency on the system.slice; for non\u2011systemd, create a dedicated cgroup and set io.latency. Monitor latency metrics after changes to confirm improvement.\"}"
+}

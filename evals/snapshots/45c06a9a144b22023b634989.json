@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1294,
+  "output_tokens": 603,
+  "text": "{\n  \"summary\":\"Intermittent DNS resolution failures between services; nslookup commands show inability to resolve 'kubernetes.default', indicating a CoreDNS or DNS configuration issue.\",\n  \"likely_cause\":\"CoreDNS add\u2011on problem or misconfigured DNS settings (e.g., incorrect nameserver or search path in /etc/resolv.conf) causing intermittent name resolution failures.\",\n  \"confidence\":\"medium\",\n  \"next_action\":\"kubectl exec -ti dnsutils -- cat /etc/resolv.conf to verify nameserver and search path; run nslookup from dnsutils pod to reproduce errors; check CoreDNS pod status (kubectl get pods -n kube-system -l k8s-app=kube-dns); inspect CoreDNS logs (kubectl logs -n kube-system <coredns-pod>); if pods are unhealthy or logs show errors, restart or redeploy CoreDNS; ensure kubelet --cluster-dns flag matches CoreDNS service IP.\"\n}"
+}

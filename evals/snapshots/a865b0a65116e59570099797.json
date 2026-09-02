@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1134,
+  "output_tokens": 464,
+  "text": "{\"summary\":\"Error rate spiked after the recent release and remains high. Documentation indicates that a deployment regression can manifest as a failed rollout where the Deployment controller reports a progress deadline exceeded condition.\",\"likely_cause\":\"Deployment failed to progress (ProgressDeadlineExceeded) due to factors such as readiness probe failures, image pull errors, insufficient quota/permissions, or other runtime misconfigurations as described in the failed\u2011deployment docs.\",\"confidence\":\"medium\",\"next_action\":\"1. Run `kubectl rollout status deployment/<name>` to confirm a progress deadline error.\\n2. Inspect the Deployment's .status.conditions for type=Progressing, status=\\\"False\\\", reason=ProgressDeadlineExceeded.\\n3. Review recent changes for readiness probes, image references, quota or permission changes.\\n4. If needed, increase `.spec.progressDeadlineSeconds` via `kubectl patch deployment <name> -p '{\\\"spec\\\":{\\\"progressDeadlineSeconds\\\":<seconds>}}'` to allow more time for rollout.\\n5. Resolve the underlying issue (e.g., fix probe config, correct image tag, adjust quota/permissions) and redeploy.\"}"
+}

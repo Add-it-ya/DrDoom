@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1397,
+  "output_tokens": 428,
+  "text": "{\"summary\":\"Container memory usage increased over ~40 minutes and the process was terminated with exit code 137 (OOMKilled). Pod status shows OOMKilled and restarts.\",\"likely_cause\":\"Out\u2011of\u2011memory condition caused by the container exceeding its memory limit (possible memory leak).\",\"confidence\":\"high\",\"next_action\":\"Run `kubectl describe pod <pod>` and `kubectl get pod -o yaml` to confirm OOMKilled reason, verify the container's memory request and limit, adjust or add a memory limit, and investigate the application for a memory leak before restarting the pod.\"}"
+}

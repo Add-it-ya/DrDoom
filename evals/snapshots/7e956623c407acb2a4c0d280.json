@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1565,
+  "output_tokens": 605,
+  "text": "{\"summary\":\"Instances continue to receive traffic even after they stop responding to requests.\",\"likely_cause\":\"Pods are not being marked as terminating or their readiness status is not being updated, so load balancers still route traffic to them (see Pod Lifecycle \u2013 Pod Termination Flow).\",\"confidence\":\"medium\",\"next_action\":\"Check that the kubelet marks the pod as terminating and updates the EndpointSlice; verify the pod's ready condition is set to false and that any load balancer respects the terminating state; review terminationGracePeriodSeconds and readiness probes; ensure the termination flow described in the documentation is correctly implemented.\"}"
+}

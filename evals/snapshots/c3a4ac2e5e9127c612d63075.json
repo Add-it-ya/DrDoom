@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1222,
+  "output_tokens": 417,
+  "text": "{\n  \"summary\":\"During each deployment, a subset of requests fail while old pods are terminating.\",\n  \"likely_cause\":\"Terminating pods may linger and consume resources, temporarily exceeding the desired replica count. This can reduce available capacity for new pods and cause request failures, especially if the deployment\u2019s max surge/unavailable settings are insufficient to mask the gap.\",\n  \"confidence\":\"medium\",\n  \"next_action\":\"1. Enable the `DeploymentReplicaSetTerminatingReplicas` feature gate on the API server and kube\u2011controller\u2011manager to observe `.status.terminatingReplicas` for Deployments and ReplicaSets. 2. Monitor terminating replica counts during a rollout (kubectl describe deployment <name>). 3. Adjust the deployment strategy (e.g., increase `maxSurge` or decrease `maxUnavailable`) to ensure enough healthy pods are running while old pods terminate. 4. If resource pressure persists, consider overprovisioning node capacity or increasing pod graceful termination period. 5. Verify that old pods complete termination within the default 30\u2011second grace period or use `--force` only as a last resort.\"\n}"
+}

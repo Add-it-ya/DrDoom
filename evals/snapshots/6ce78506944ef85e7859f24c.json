@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1300,
+  "output_tokens": 471,
+  "text": "{\"summary\":\"The node must be taken out of service while keeping traffic flowing. Documentation recommends adding the taint `node.kubernetes.io/out-of-service` (with `NoExecute` or `NoSchedule`) after confirming the node is already shutting down, which forces pod deletion and immediate volume detachment so pods can be rescheduled elsewhere without traffic loss.\",\"likely_cause\":\"The classifier reported a traffic spike, but the provided documentation does not address traffic spikes as a cause for needing to remove a node from service.\",\"confidence\":\"low\",\"next_action\":\"1. Verify the node is already in a shutdown or power\u2011off state. 2. Apply the taint `node.kubernetes.io/out-of-service` with `NoExecute` or `NoSchedule` to the node. 3. Ensure pods have no tolerations for the taint so they are force\u2011deleted and volumes detach immediately. 4. Monitor pod rescheduling on other nodes to confirm traffic continues uninterrupted. 5. If traffic spike remains a concern, gather additional logs or metrics not covered in the current docs.\"}"
+}
