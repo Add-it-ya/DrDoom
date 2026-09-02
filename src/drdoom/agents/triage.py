@@ -4,7 +4,7 @@ No model is called here. Detection and classification are the measured, determin
 part of the system, and the language layer downstream depends on them being decided
 before it is asked anything.
 
-Both components are injected rather than constructed, so the detector that Phase 2
+Both components are injected rather than constructed, so the detector that
 measurement actually favoured can be swapped in without editing this file. On the real
 dataset that was a window statistic, not the autoencoder.
 """
