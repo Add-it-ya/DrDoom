@@ -1,0 +1,181 @@
+{
+  "description": "Operational questions paired with the documents that answer them. Authored by hand against the fetched corpus; relevance is judged at document level, so a query is satisfied when any chunk of a listed document is retrieved.",
+  "limitations": "Single-annotator labels, no inter-annotator agreement, and a query set small enough that a few percent of recall is within noise. Treated as a regression guard and a relative comparison between retrievers, not as an absolute measure of retrieval quality.",
+  "queries": [
+    {
+      "query": "restart every pod in a deployment without changing the image",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_restart.md"]
+    },
+    {
+      "query": "roll back a bad deploy to the previous working version",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_undo.md"]
+    },
+    {
+      "query": "how do I check whether a rollout has finished",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_status.md"]
+    },
+    {
+      "query": "pause an in-progress rollout while we investigate",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_pause.md"]
+    },
+    {
+      "query": "see the revision history of a deployment",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_history.md"]
+    },
+    {
+      "query": "container is being killed for using too much memory",
+      "relevant": [
+        "kubernetes:content/en/docs/tasks/configure-pod-container/assign-memory-resource.md",
+        "kubernetes:content/en/docs/tasks/administer-cluster/manage-resources/memory-constraint-namespace.md"
+      ]
+    },
+    {
+      "query": "set a memory limit on a container so it cannot grow without bound",
+      "relevant": ["kubernetes:content/en/docs/tasks/configure-pod-container/assign-memory-resource.md"]
+    },
+    {
+      "query": "reserve cpu for a container and cap how much it can use",
+      "relevant": ["kubernetes:content/en/docs/tasks/configure-pod-container/assign-cpu-resource.md"]
+    },
+    {
+      "query": "configure health checks so an unhealthy container is restarted automatically",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/pods/probes.md"]
+    },
+    {
+      "query": "difference between liveness and readiness probe",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/pods/probes.md"]
+    },
+    {
+      "query": "scale a service automatically when cpu utilisation rises",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md"]
+    },
+    {
+      "query": "adjust pod resource requests automatically based on observed usage",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/autoscaling/vertical-pod-autoscale.md"]
+    },
+    {
+      "query": "add more nodes to the cluster when pods cannot be scheduled",
+      "relevant": ["kubernetes:content/en/docs/concepts/cluster-administration/node-autoscaling.md"]
+    },
+    {
+      "query": "cap total cpu and memory a namespace is allowed to consume",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/manage-resources/quota-memory-cpu-namespace.md"]
+    },
+    {
+      "query": "set a default cpu request for containers that do not declare one",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/manage-resources/cpu-default-namespace.md"]
+    },
+    {
+      "query": "limit the number of pods allowed in a namespace",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/manage-resources/quota-pod-namespace.md"]
+    },
+    {
+      "query": "take a node out of service for maintenance without dropping traffic",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/safely-drain-node.md"]
+    },
+    {
+      "query": "stop too many replicas being evicted at once during cluster maintenance",
+      "relevant": [
+        "kubernetes:content/en/docs/concepts/workloads/pods/disruptions.md",
+        "kubernetes:content/en/docs/tasks/administer-cluster/safely-drain-node.md"
+      ]
+    },
+    {
+      "query": "dns lookups are failing from inside the cluster",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/dns-debugging-resolution.md"]
+    },
+    {
+      "query": "my pod will not start and I need to work out why",
+      "relevant": ["kubernetes:content/en/docs/tasks/debug/debug-application/debug-pods.md"]
+    },
+    {
+      "query": "get a shell inside a running container to investigate",
+      "relevant": ["kubernetes:content/en/docs/tasks/debug/debug-application/debug-running-pod.md"]
+    },
+    {
+      "query": "requests to a service are not reaching the backend pods",
+      "relevant": ["kubernetes:content/en/docs/tasks/debug/debug-application/debug-service.md"]
+    },
+    {
+      "query": "where are container logs stored and how are they rotated",
+      "relevant": ["kubernetes:content/en/docs/concepts/cluster-administration/logging.md"]
+    },
+    {
+      "query": "change the log verbosity of the control plane components",
+      "relevant": ["kubernetes:content/en/docs/concepts/cluster-administration/system-logs.md"]
+    },
+    {
+      "query": "control how the kubelet pins cpus to workloads",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/cpu-management-policies.md"]
+    },
+    {
+      "query": "should I enable swap on kubernetes nodes",
+      "relevant": ["kubernetes:content/en/docs/concepts/cluster-administration/swap-memory-management.md"]
+    },
+    {
+      "query": "restrict which pods can talk to each other over the network",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/declare-network-policy.md"]
+    },
+    {
+      "query": "run a batch workload to completion and clean it up afterwards",
+      "relevant": [
+        "kubernetes:content/en/docs/concepts/workloads/controllers/job.md",
+        "kubernetes:content/en/docs/concepts/workloads/controllers/ttlafterfinished.md"
+      ]
+    },
+    {
+      "query": "run a task on a repeating schedule",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/controllers/cron-jobs.md"]
+    },
+    {
+      "query": "workload that needs stable network identity and persistent storage per replica",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/controllers/statefulset.md"]
+    },
+    {
+      "query": "how do rolling updates work and how do I control the surge",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/controllers/deployment.md"]
+    },
+    {
+      "query": "change the cpu and memory requests on an existing deployment from the command line",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_set/kubectl_set_resources.md"]
+    },
+    {
+      "query": "what makes a good alert and how do I avoid paging on noise",
+      "relevant": ["prometheus:docs/practices/alerting.md"]
+    },
+    {
+      "query": "write an alerting rule that fires on a metric threshold",
+      "relevant": [
+        "prometheus:docs/tutorials/alerting_based_on_metrics.md",
+        "prometheus:docs/practices/alerting.md"
+      ]
+    },
+    {
+      "query": "use histogram buckets to compute a latency percentile",
+      "relevant": ["prometheus:docs/practices/histograms.md"]
+    },
+    {
+      "query": "collect cpu memory and disk metrics from a linux host",
+      "relevant": ["prometheus:docs/guides/node-exporter.md"]
+    },
+    {
+      "query": "guidance on what to instrument in my own service",
+      "relevant": ["prometheus:docs/practices/instrumentation.md"]
+    },
+    {
+      "query": "find slow queries that are overloading the metrics backend",
+      "relevant": ["prometheus:docs/guides/query-log.md"]
+    },
+    {
+      "query": "detect when a metric deviates from its normal range",
+      "relevant": ["prometheus:blog/posts/2015-06-18-practical-anomaly-detection.md"]
+    },
+    {
+      "query": "getting started with scraping my first target",
+      "relevant": [
+        "prometheus:docs/introduction/first_steps.md",
+        "prometheus:docs/tutorials/getting_started.md"
+      ]
+    }
+  ]
+}
