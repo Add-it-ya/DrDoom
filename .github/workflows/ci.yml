@@ -38,3 +38,41 @@ jobs:
 
       - name: Test
         run: uv run pytest --cov=drdoom --cov-report=term-missing
+
+  evaluate:
+    # Scores the generated half against recorded model responses, so it costs
+    # nothing and gives the same answer every run. Fails the build when a score
+    # falls below its floor.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Restore the document corpus
+        id: corpus
+        uses: actions/cache@v4
+        with:
+          path: data/raw/corpus
+          key: corpus-${{ hashFiles('src/drdoom/rag/corpus.py') }}
+
+      - name: Fetch the document corpus
+        if: steps.corpus.outputs.cache-hit != 'true'
+        run: uv run python -c "from drdoom.rag import corpus; corpus.download()"
+
+      - name: Score retrieval and diagnosis
+        run: uv run python -m drdoom.evals.run
+
+      - name: Publish the scores
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: docs/eval-results.*
+          if-no-files-found: ignore
