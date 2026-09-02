@@ -27,7 +27,7 @@ authorises it — with the decision written to an append-only audit log.
 | Agents and model layer | Done |
 | Agent orchestration | Done |
 | Approval gate and audit | Done |
-| API and dashboard | Not started |
+| API and dashboard | Done |
 
 ## Data
 
@@ -167,6 +167,35 @@ triage ─┬─ no incident ─────────────────
 
 Routing after triage is conditional, so a quiet system costs nothing: no retrieval, no
 model call, no tokens.
+
+### API and dashboard
+
+```bash
+DRDOOM_API_KEYS="aditya:choose-a-key" uv run uvicorn drdoom.api.main:app
+```
+
+`POST /investigate` starts a run and returns where it stopped. `POST /investigate/stream`
+delivers the same run a stage at a time over server-sent events, so the dashboard fills in
+progressively instead of blocking on one long request.
+`POST /incidents/{id}/approve` resumes a suspended one.
+
+**Approving requires a credential**; reading does not. The key maps to a named principal,
+because the audit log has to record *who* decided and "someone with a valid key" is not an
+answer a review accepts. An unset key ring accepts nobody — a deployment that forgot to
+configure credentials refuses approvals rather than accepting them from anyone.
+
+**Approving twice is safe.** Networks retry, so a recorded decision is returned as it
+stands rather than applied a second time. A later reversal is refused.
+
+**No model output reaches the DOM as markup.** Plain fields go through `textContent`; the
+postmortem is markdown, so it goes through DOMPurify. That chain matters here more than
+usual: text originates from a model reading a document corpus, and the dashboard is
+same-origin with the approval endpoint, so a poisoned document that talks the model into
+emitting a script tag would otherwise be one step from a privileged action. A test asserts
+every `innerHTML` assignment in the page has `DOMPurify.sanitize` on its right-hand side,
+and the behaviour was checked in a browser against a payload carrying
+`<script>`, `<img onerror>` and a `javascript:` link — all three are stripped and the text
+displays inert.
 
 ### Model providers
 
