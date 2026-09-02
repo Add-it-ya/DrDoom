@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DrDoom</title>
+
+<!--
+  Model output is never assigned to innerHTML.
+
+  Plain fields go through textContent, which cannot introduce markup. The postmortem is
+  markdown and has to become html, so it goes through DOMPurify first. That matters here
+  more than in most applications: the text originates from a language model reading a
+  document corpus, so a poisoned document could ask the model to emit a script tag, and
+  this page is same-origin with the approval endpoint. Retrieval -> model -> operator
+  browser -> privileged action is a real chain, and this is where it is cut.
+
+  The rule for anyone editing this file: if the value came from the api, it is either
+  textContent or it is sanitised. There is no third option.
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+
+<style>
+  :root {
+    --bg: #f5f6f7; --panel: #ffffff; --ink: #16191c; --muted: #666f77;
+    --line: #dfe3e6; --accent: #7a3b1d; --ok: #1c6339; --warn: #7e5a05; --crit: #97231f;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131619; --panel: #1b1f23; --ink: #e4e8ea; --muted: #8b959d;
+      --line: #2b3136; --accent: #d98a5f; --ok: #6bc08e; --warn: #ddae4b; --crit: #f0847e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); line-height: 1.55;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 24px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -.01em; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+  button {
+    font: inherit; padding: 8px 15px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel); color: var(--ink); cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.approve { border-color: var(--ok); color: var(--ok); }
+  button.reject { border-color: var(--crit); color: var(--crit); }
+  input[type=password], input[type=text] {
+    font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel); color: var(--ink); min-width: 220px;
+  }
+  label { font-size: 13px; color: var(--muted); }
+
+  .stages { display: grid; gap: 10px; margin-bottom: 22px; }
+  .stage {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+    padding: 12px 15px; display: grid; grid-template-columns: 110px 1fr; gap: 14px;
+    align-items: baseline; opacity: .45;
+  }
+  .stage.active { opacity: 1; }
+  .stage .name {
+    font-family: var(--mono); font-size: 12px; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--muted);
+  }
+  .stage .body { min-width: 0; }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; word-break: break-word; }
+
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px;
+    border-radius: 3px; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .pill.low { background: rgba(28,99,57,.14); color: var(--ok); }
+  .pill.medium { background: rgba(126,90,5,.16); color: var(--warn); }
+  .pill.high { background: rgba(151,35,31,.14); color: var(--crit); }
+
+  .gate {
+    border: 1px solid var(--warn); border-left-width: 3px; border-radius: 5px;
+    background: var(--panel); padding: 16px 18px; margin-bottom: 22px;
+  }
+  .gate h2 { margin: 0 0 8px; font-size: 16px; }
+  .gate .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .hash { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+  .report { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 22px 18px; }
+  .report h1 { font-size: 20px; } .report h2 { font-size: 15px; margin-top: 20px; }
+  .report code { font-family: var(--mono); font-size: .9em; }
+
+  .log { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 24px; }
+  .log div { padding: 1px 0; }
+  .err { color: var(--crit); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DrDoom</h1>
+    <p>Detect an incident, diagnose it against real documentation, propose a fix, and hold it at a human gate.</p>
+  </header>
+
+  <div class="controls">
+    <button id="run" class="primary">Investigate a disturbed window</button>
+    <button id="runCalm">Investigate a calm window</button>
+    <label for="key">Approval key</label>
+    <input id="key" type="password" placeholder="X-API-Key" autocomplete="off">
+  </div>
+
+  <div class="stages">
+    <div class="stage" id="s-triage"><span class="name">Triage</span><div class="body" id="b-triage"></div></div>
+    <div class="stage" id="s-diagnose"><span class="name">Diagnosis</span><div class="body" id="b-diagnose"></div></div>
+    <div class="stage" id="s-remediate"><span class="name">Remediation</span><div class="body" id="b-remediate"></div></div>
+    <div class="stage" id="s-execute"><span class="name">Outcome</span><div class="body" id="b-execute"></div></div>
+  </div>
+
+  <div class="gate" id="gate" hidden>
+    <h2>Approval required</h2>
+    <div class="body" id="gateBody"></div>
+    <div class="actions">
+      <button class="approve" id="approve">Approve</button>
+      <button class="reject" id="reject">Reject</button>
+    </div>
+  </div>
+
+  <div class="report" id="report" hidden></div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+let incidentId = null;
+
+/** Append a line to the activity log. Always textContent. */
+function log(message, isError) {
+  const line = document.createElement("div");
+  if (isError) line.className = "err";
+  line.textContent = new Date().toLocaleTimeString() + "  " + message;
+  $("log").appendChild(line);
+}
+
+/** Build a definition list. Values are set with textContent, never parsed as markup. */
+function details(pairs) {
+  const list = document.createElement("dl");
+  list.className = "kv";
+  for (const [label, value, pillClass] of pairs) {
+    if (value === null || value === undefined || value === "") continue;
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const definition = document.createElement("dd");
+    if (pillClass) {
+      const pill = document.createElement("span");
+      pill.className = "pill " + pillClass;
+      pill.textContent = String(value);
+      definition.appendChild(pill);
+    } else {
+      definition.textContent = String(value);
+    }
+    list.append(term, definition);
+  }
+  return list;
+}
+
+function fill(stage, node) {
+  const body = $("b-" + stage);
+  body.replaceChildren(node);
+  $("s-" + stage).classList.add("active");
+}
+
+function reset() {
+  incidentId = null;
+  for (const stage of ["triage", "diagnose", "remediate", "execute"]) {
+    $("b-" + stage).replaceChildren();
+    $("s-" + stage).classList.remove("active");
+  }
+  $("gate").hidden = true;
+  $("report").hidden = true;
+  $("report").replaceChildren();
+  $("log").replaceChildren();
+}
+
+function showTriage(data) {
+  const t = data.triage || {};
+  fill("triage", details([
+    ["Incident", t.is_anomaly ? "detected" : "nothing detected"],
+    ["Score", t.score],
+    ["Threshold", t.threshold],
+    ["Predicted cause", t.root_cause],
+    ["Confidence", t.confidence],
+  ]));
+}
+
+function showDiagnosis(data) {
+  const d = data.diagnosis || {};
+  const wrapper = document.createElement("div");
+  wrapper.appendChild(details([
+    ["Summary", d.summary],
+    ["Likely cause", d.likely_cause],
+    ["Confidence", d.confidence],
+    ["Next action", d.next_action],
+  ]));
+  const cites = data.citations || [];
+  if (cites.length) {
+    const heading = document.createElement("div");
+    heading.className = "hash";
+    heading.textContent = "Sources";
+    const list = document.createElement("ul");
+    for (const citation of cites) {
+      const item = document.createElement("li");
+      if (citation.url) {
+        const link = document.createElement("a");
+        link.href = citation.url;           // set as a property, not interpolated markup
+        link.rel = "noopener noreferrer";
+        link.target = "_blank";
+        link.textContent = citation.title;  // title is model-adjacent text: textContent
+        item.appendChild(link);
+      } else {
+        item.textContent = citation.title;
+      }
+      list.appendChild(item);
+    }
+    wrapper.append(heading, list);
+  }
+  fill("diagnose", wrapper);
+}
+
+function showPlan(data) {
+  const p = data.plan || {};
+  fill("remediate", details([
+    ["Immediate action", p.immediate_action],
+    ["Risk", p.risk_level, p.risk_level],
+    ["Needs approval", p.requires_approval ? "yes" : "no"],
+    ["Short-term fix", p.short_term_fix],
+    ["Long-term fix", p.long_term_fix],
+    ["Rollback", p.rollback],
+  ]));
+}
+
+function showOutcome(data) {
+  const execution = data.execution || {};
+  fill("execute", details([
+    ["Decision", data.decision],
+    ["Executed", execution.executed ? "yes (dry run)" : "no"],
+    ["Command", execution.command],
+    ["Reason", execution.detail],
+    ["Escalation", data.escalation],
+  ]));
+}
+
+function showGate(pending) {
+  const body = $("gateBody");
+  body.replaceChildren(details([
+    ["Action", pending.immediate_action],
+    ["Risk", pending.risk_level, pending.risk_level],
+    ["Rollback", pending.rollback],
+  ]));
+  const hash = document.createElement("div");
+  hash.className = "hash";
+  hash.textContent = "plan " + String(pending.plan_hash || "").slice(0, 16);
+  body.appendChild(hash);
+  $("gate").hidden = false;
+}
+
+/**
+ * The only place model output becomes markup.
+ * Sanitised first; the result of marked.parse is never trusted directly.
+ */
+function showReport(markdown) {
+  if (!markdown) return;
+  // Assigned directly rather than through a variable, so the rule stays legible:
+  // every innerHTML on this page has DOMPurify.sanitize on its right-hand side.
+  $("report").innerHTML = DOMPurify.sanitize(
+    marked.parse(markdown), { USE_PROFILES: { html: true } }
+  );
+  $("report").hidden = false;
+}
+
+async function investigate(anomalous) {
+  reset();
+  $("run").disabled = $("runCalm").disabled = true;
+  log("requesting a " + (anomalous ? "disturbed" : "calm") + " window");
+
+  try {
+    const response = await fetch("/demo/window?anomalous=" + anomalous);
+    const payload = await response.json();
+    log("streaming the investigation");
+
+    const stream = await fetch("/investigate/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!stream.ok) throw new Error("investigate failed: " + stream.status);
+
+    const reader = stream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop();
+      for (const block of blocks) handleEvent(block);
+    }
+  } catch (error) {
+    log(String(error), true);
+  } finally {
+    $("run").disabled = $("runCalm").disabled = false;
+  }
+}
+
+function handleEvent(block) {
+  const nameLine = block.split("\n").find((l) => l.startsWith("event: "));
+  const dataLine = block.split("\n").find((l) => l.startsWith("data: "));
+  if (!nameLine || !dataLine) return;
+  const name = nameLine.slice(7).trim();
+  let data;
+  try { data = JSON.parse(dataLine.slice(6)); } catch { return; }
+
+  log("stage: " + name);
+  if (name === "accepted") { incidentId = data.incident_id; }
+  else if (name === "triage") { showTriage(data); }
+  else if (name === "diagnose") { showDiagnosis(data); }
+  else if (name === "remediate") { showPlan(data); }
+  else if (name === "awaiting_approval") { showGate(data); }
+  else if (name === "execute" || name === "escalate") { showOutcome(data); }
+  else if (name === "report") { showReport(data.report); }
+  else if (name === "done") { log("finished: " + data.status); }
+}
+
+async function decide(approved) {
+  const key = $("key").value.trim();
+  if (!key) { log("an approval key is required", true); return; }
+  $("approve").disabled = $("reject").disabled = true;
+
+  try {
+    const response = await fetch("/incidents/" + encodeURIComponent(incidentId) + "/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": key },
+      body: JSON.stringify({ approved }),
+    });
+    if (response.status === 401) throw new Error("that key was not accepted");
+    if (!response.ok) throw new Error("approval failed: " + response.status);
+
+    const data = await response.json();
+    $("gate").hidden = true;
+    showOutcome(data);
+    showReport(data.report);
+    log("decision recorded: " + data.decision);
+  } catch (error) {
+    log(String(error), true);
+  } finally {
+    $("approve").disabled = $("reject").disabled = false;
+  }
+}
+
+$("run").addEventListener("click", () => investigate(true));
+$("runCalm").addEventListener("click", () => investigate(false));
+$("approve").addEventListener("click", () => decide(true));
+$("reject").addEventListener("click", () => decide(false));
+</script>
+</body>
+</html>
