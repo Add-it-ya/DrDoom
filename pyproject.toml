@@ -7,6 +7,8 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Aditya Raj", email = "skrair36@gmail.com" }]
 dependencies = [
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
     "numpy>=2.0,<3",
     "openai>=1.50,<3",
     "optuna>=4.0,<5",
