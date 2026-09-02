@@ -28,3 +28,7 @@ audit.log
 .idea/
 .DS_Store
 Thumbs.db
+
+# Durable graph state, rebuilt on demand
+state/
+*.sqlite
