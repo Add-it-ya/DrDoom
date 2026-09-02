@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from tempfile import mkdtemp
 
 import numpy as np
 import pytest
@@ -17,6 +18,7 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import (
     APPROVED,
     AUTO_APPROVED,
+    POLICY_PRINCIPAL,
     REJECTED,
     Investigator,
     open_checkpointer,
@@ -24,8 +26,10 @@ from drdoom.agents.graph import (
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.triage import TriageAgent, window_to_series
+from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
+from drdoom.executor import DryRunExecutor
 from drdoom.llm.stub import StubProvider
 from drdoom.rag.corpus import Document
 from drdoom.rag.index import BM25Index
@@ -49,7 +53,12 @@ def calm_window(seed: int = 2) -> np.ndarray:
     return np.random.default_rng(seed).normal(50, 1, size=(60, 2)).astype(np.float32)
 
 
-def make_investigator(checkpointer, plan_json: str = PLAN, threshold: float = 5.0) -> Investigator:
+def make_investigator(
+    checkpointer,
+    plan_json: str = PLAN,
+    threshold: float = 5.0,
+    audit_path: Path | None = None,
+) -> Investigator:
     quiet = np.random.default_rng(0).normal(50, 1, size=(60, 2)).astype(np.float32)
     series, index = window_to_series(quiet, ["a", "b"])
     detector = WindowSpread()
@@ -74,6 +83,7 @@ def make_investigator(checkpointer, plan_json: str = PLAN, threshold: float = 5.
         RemediationAgent(retriever, StubProvider(default=plan_json)),
         ReportingAgent(StubProvider(default=POSTMORTEM)),
         checkpointer,
+        audit=AuditLog(audit_path) if audit_path else AuditLog(Path(mkdtemp()) / "audit.jsonl"),
     )
 
 
@@ -289,12 +299,128 @@ def test_resuming_an_unknown_thread_does_not_invent_a_report(tmp_path) -> None:
         assert investigator.status("never-existed").report is None
 
 
-@pytest.mark.parametrize("approved", [True, False])
-def test_every_decision_produces_a_report(tmp_path, approved: bool) -> None:
+@pytest.mark.parametrize(("approved", "expected"), [(True, "complete"), (False, "rejected")])
+def test_every_decision_produces_a_report(tmp_path, approved: bool, expected: str) -> None:
     with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
         investigator = make_investigator(checkpointer)
         investigator.start(disturbed_window(), "latency climbing", "incident")
         outcome = investigator.resume("incident", approved=approved)
 
-    assert outcome.status == "complete"
+    assert outcome.status == expected
     assert outcome.report
+
+
+# --- the gate inside the pipeline ---------------------------------------------------
+
+
+class SpyExecutor(DryRunExecutor):
+    """Records every call so the rejection path can be shown to make none."""
+
+    def __init__(self) -> None:
+        super().__init__(target="api")
+        self.calls: list = []
+
+    def execute(self, plan, token):
+        self.calls.append((plan, token))
+        return super().execute(plan, token)
+
+
+def test_the_executor_is_never_invoked_on_the_rejection_path(tmp_path) -> None:
+    """The claim the gate exists to support: rejecting means nothing ran."""
+    executor = SpyExecutor()
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=tmp_path / "audit.jsonl")
+        investigator.executor = executor
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+
+        outcome = investigator.resume("incident", approved=False, principal="aditya")
+
+    assert executor.calls == []
+    assert outcome.executed is False
+    assert outcome.status == "rejected"
+
+
+def test_an_approved_plan_reaches_the_executor(tmp_path) -> None:
+    executor = SpyExecutor()
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=tmp_path / "audit.jsonl")
+        investigator.executor = executor
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+
+        outcome = investigator.resume("incident", approved=True, principal="aditya")
+
+    assert len(executor.calls) == 1
+    assert outcome.executed is True
+    assert outcome.execution["command"] == "kubectl rollout restart deployment/api"
+
+
+def test_the_audited_hash_matches_the_plan_the_approver_saw(tmp_path) -> None:
+    """A review can confirm the plan that ran is the plan that was shown."""
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        suspended = investigator.start(disturbed_window(), "latency climbing", "incident")
+        shown = suspended.pending["plan_hash"]
+
+        investigator.resume("incident", approved=True, principal="aditya")
+
+    entry = AuditLog(audit_path).entries()[0]
+    assert entry.plan_hash == shown
+    assert entry.principal == "aditya"
+    assert entry.executed is True
+
+
+def test_the_approving_principal_is_recorded(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        investigator.resume("incident", approved=True, principal="on-call-b")
+
+    assert AuditLog(audit_path).entries()[0].principal == "on-call-b"
+
+
+def test_a_rejection_is_audited_as_a_rejection(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        investigator.resume("incident", approved=False, principal="aditya")
+
+    entry = AuditLog(audit_path).entries()[0]
+    assert entry.decision == REJECTED
+    assert entry.executed is False
+
+
+def test_rejection_escalates_in_the_written_report(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=tmp_path / "audit.jsonl")
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        outcome = investigator.resume("incident", approved=False, principal="aditya")
+
+    assert "escalated to the on-call engineer" in outcome.report
+    assert "aditya" in outcome.state["escalation"]
+
+
+def test_an_auto_approved_plan_is_attributed_to_policy(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        make_investigator(checkpointer, plan_json=LOW_RISK_PLAN, audit_path=audit_path).start(
+            disturbed_window(), "minor blip", "minor"
+        )
+
+    assert AuditLog(audit_path).entries()[0].principal == POLICY_PRINCIPAL
+
+
+def test_the_audit_chain_survives_several_incidents(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        for index, approved in enumerate([True, False, True]):
+            thread = f"incident-{index}"
+            investigator.start(disturbed_window(), "latency climbing", thread)
+            investigator.resume(thread, approved=approved, principal="aditya")
+
+    log = AuditLog(audit_path)
+    assert len(log.entries()) == 3
+    assert log.verify() == (True, "chain intact")

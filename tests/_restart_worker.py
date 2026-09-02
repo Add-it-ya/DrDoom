@@ -20,6 +20,7 @@ from drdoom.agents.graph import Investigator, open_checkpointer
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.triage import TriageAgent, window_to_series
+from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
 from drdoom.llm.stub import StubProvider
@@ -59,7 +60,7 @@ FEATURES = ["a", "b"]
 THRESHOLD = 5.0
 
 
-def build(checkpointer) -> Investigator:
+def build(checkpointer, audit_path: Path) -> Investigator:
     quiet = np.random.default_rng(0).normal(50, 1, size=(60, 2)).astype(np.float32)
     series, index = window_to_series(quiet, FEATURES)
     detector = WindowSpread()
@@ -84,6 +85,7 @@ def build(checkpointer) -> Investigator:
         RemediationAgent(retriever, StubProvider(default=PLAN)),
         ReportingAgent(StubProvider(default=POSTMORTEM)),
         checkpointer,
+        audit=AuditLog(audit_path),
     )
 
 
@@ -97,7 +99,7 @@ def main() -> None:
     action, database, thread_id = sys.argv[1], Path(sys.argv[2]), sys.argv[3]
 
     with open_checkpointer(database) as checkpointer:
-        investigator = build(checkpointer)
+        investigator = build(checkpointer, database.with_name("audit.jsonl"))
         if action == "start":
             outcome = investigator.start(
                 disturbed_window(), "latency and memory climbing", thread_id
