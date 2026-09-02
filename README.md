@@ -25,7 +25,7 @@ authorises it — with the decision written to an append-only audit log.
 | Root-cause classification | Done |
 | Retrieval | Done |
 | Agents and model layer | Done |
-| Agent orchestration | Not started |
+| Agent orchestration | Done |
 | Approval gate and audit | Not started |
 | API and dashboard | Not started |
 
@@ -142,6 +142,31 @@ goes back to the model with the validation error attached, once. Not a loop: a m
 cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
 repair turns a bad response into a bill. If the provider is unreachable the agents degrade
 to the retrieved documentation and say so, rather than inventing a summary.
+
+### Orchestration
+
+One pipeline definition, and it suspends.
+
+An investigation pauses to ask a human a question, and the answer may not arrive for
+hours. A request handler cannot block on that. The graph therefore calls `interrupt()`
+before the remediation gate; the checkpointer writes the suspended state to SQLite, and a
+later call resumes the same `thread_id` from where it stopped.
+
+Nothing is held in process memory between those two calls, which is the property that
+makes this a graph rather than four function calls in sequence. The test that proves it
+starts an investigation in one interpreter, exits, and finishes it in a second one that
+shares nothing but the database file.
+
+```
+triage ─┬─ no incident ─────────────────────────────► end
+        └─ incident ─► diagnose ─► remediate ─► approval ─► report ─► end
+                                                   │
+                                          suspends here when
+                                          risk is medium or high
+```
+
+Routing after triage is conditional, so a quiet system costs nothing: no retrieval, no
+model call, no tokens.
 
 ### Model providers
 
