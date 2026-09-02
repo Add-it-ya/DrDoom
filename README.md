@@ -23,7 +23,7 @@ authorises it — with the decision written to an append-only audit log.
 | Data pipeline | Done |
 | Anomaly detection | Done |
 | Root-cause classification | Done |
-| Retrieval | Not started |
+| Retrieval | Done |
 | Agent orchestration | Not started |
 | Approval gate and audit | Not started |
 | API and dashboard | Not started |
@@ -92,6 +92,34 @@ rather than causal analysis. The weaker claim is the true one.
 
 ```bash
 python -m drdoom.classify.train
+```
+
+### Retrieval
+
+430 documents of Kubernetes and Prometheus operational documentation, 5671 chunks, with
+no filter narrowing the search to a document the classifier already picked. Scored on 40
+hand-authored operational questions in [`evals/`](evals/retrieval_queries.json). Full
+ablation in [docs/retrieval-results.md](docs/retrieval-results.md).
+
+| Configuration | Hit@5 | Recall@5 | MRR |
+|---|---:|---:|---:|
+| BM25 only | 0.725 | 0.675 | 0.539 |
+| Dense only (MiniLM) | 0.825 | 0.787 | 0.630 |
+| Hybrid (BM25 + MiniLM) | 0.850 | 0.812 | 0.617 |
+| Hybrid + cross-encoder rerank | **0.875** | **0.838** | **0.699** |
+
+Here, unlike detection and classification, every component pays for itself. The reranker
+is the clearest case: it adds little to hit rate but moves MRR from 0.617 to 0.699, which
+is what reranking is for — it does not find more, it orders better, and position decides
+what fits in the model's context.
+
+The dense index is plain numpy. At a few thousand chunks an exact dot product is well
+under a millisecond; a vector service earns its place when the corpus outgrows memory or
+needs concurrent writers, and adding one earlier would be the unjustified machinery this
+project exists to avoid.
+
+```bash
+python -m drdoom.rag.evaluate
 ```
 
 ## Getting started
