@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Aditya Raj", email = "skrair36@gmail.com" }]
 dependencies = [
     "numpy>=2.0,<3",
+    "openai>=1.50,<3",
     "optuna>=4.0,<5",
     "pandas>=2.2,<3",
     "pyarrow>=17,<23",
@@ -17,6 +18,11 @@ dependencies = [
     "sentence-transformers>=3.0,<6",
     "torch>=2.4,<3",
     "xgboost>=2.1,<4",
+]
+
+[project.optional-dependencies]
+anthropic = [
+    "anthropic>=0.40",
 ]
 
 [dependency-groups]
