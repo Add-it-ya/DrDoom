@@ -1,0 +1,111 @@
+{
+  "description": "Incident scenarios paired with the documents that should inform a diagnosis and the terms a useful answer is expected to contain. Used to score retrieval and groundedness of the generated diagnosis together, since a well-grounded answer over the wrong documents is still wrong.",
+  "limitations": "Single-annotator labels over a corpus of vendor documentation, fifteen cases. Expected terms are a coarse relevance check, not a correctness oracle: a diagnosis can contain every expected term and still be wrong. Treated as a regression guard, not a benchmark.",
+  "cases": [
+    {
+      "id": "memory-oom",
+      "symptoms": "container memory has climbed steadily for forty minutes and the process was killed",
+      "root_cause": "memory_leak",
+      "relevant": ["kubernetes:content/en/docs/tasks/configure-pod-container/assign-memory-resource.md"],
+      "expect_terms": ["memory", "limit"]
+    },
+    {
+      "id": "memory-namespace-cap",
+      "symptoms": "one namespace is consuming all available memory on the cluster",
+      "root_cause": "memory_leak",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/manage-resources/memory-constraint-namespace.md"],
+      "expect_terms": ["memory", "namespace"]
+    },
+    {
+      "id": "deploy-regression",
+      "symptoms": "error rate jumped immediately after a release and has stayed high",
+      "root_cause": "deploy_regression",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_undo.md"],
+      "expect_terms": ["rollout", "previous"]
+    },
+    {
+      "id": "deploy-stuck",
+      "symptoms": "a rollout has been in progress for twenty minutes and is not completing",
+      "root_cause": "deploy_regression",
+      "relevant": ["kubernetes:content/en/docs/reference/kubectl/generated/kubectl_rollout/kubectl_rollout_status.md"],
+      "expect_terms": ["rollout", "status"]
+    },
+    {
+      "id": "deploy-surge",
+      "symptoms": "during every deploy a portion of requests fail while old pods terminate",
+      "root_cause": "deploy_regression",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/controllers/deployment.md"],
+      "expect_terms": ["rolling", "update"]
+    },
+    {
+      "id": "traffic-spike-scale",
+      "symptoms": "queue depth and cpu are rising together as request volume doubles",
+      "root_cause": "traffic_spike",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md"],
+      "expect_terms": ["scale", "cpu"]
+    },
+    {
+      "id": "traffic-spike-nodes",
+      "symptoms": "pods are pending because no node has capacity for them",
+      "root_cause": "traffic_spike",
+      "relevant": ["kubernetes:content/en/docs/concepts/cluster-administration/node-autoscaling.md"],
+      "expect_terms": ["node", "scale"]
+    },
+    {
+      "id": "unhealthy-pods",
+      "symptoms": "instances keep serving traffic after they stop responding to requests",
+      "root_cause": "downstream_outage",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/pods/probes.md"],
+      "expect_terms": ["probe", "readiness"]
+    },
+    {
+      "id": "dns-failures",
+      "symptoms": "services intermittently cannot resolve each other by name",
+      "root_cause": "downstream_outage",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/dns-debugging-resolution.md"],
+      "expect_terms": ["dns", "resolution"]
+    },
+    {
+      "id": "service-unreachable",
+      "symptoms": "requests to a service return errors but the pods themselves look healthy",
+      "root_cause": "downstream_outage",
+      "relevant": ["kubernetes:content/en/docs/tasks/debug/debug-application/debug-service.md"],
+      "expect_terms": ["service", "endpoints"]
+    },
+    {
+      "id": "pods-not-starting",
+      "symptoms": "new pods are stuck and never become ready after a config change",
+      "root_cause": "deploy_regression",
+      "relevant": ["kubernetes:content/en/docs/tasks/debug/debug-application/debug-pods.md"],
+      "expect_terms": ["pod", "describe"]
+    },
+    {
+      "id": "node-maintenance",
+      "symptoms": "a node must be taken out of service without dropping live traffic",
+      "root_cause": "traffic_spike",
+      "relevant": ["kubernetes:content/en/docs/tasks/administer-cluster/safely-drain-node.md"],
+      "expect_terms": ["drain", "node"]
+    },
+    {
+      "id": "eviction-storm",
+      "symptoms": "too many replicas were evicted at once during a cluster upgrade",
+      "root_cause": "downstream_outage",
+      "relevant": ["kubernetes:content/en/docs/concepts/workloads/pods/disruptions.md"],
+      "expect_terms": ["disruption", "budget"]
+    },
+    {
+      "id": "noisy-alerts",
+      "symptoms": "the on-call rotation is being paged repeatedly for conditions that resolve themselves",
+      "root_cause": "traffic_spike",
+      "relevant": ["prometheus:docs/practices/alerting.md"],
+      "expect_terms": ["alert", "page"]
+    },
+    {
+      "id": "latency-percentiles",
+      "symptoms": "average latency looks fine but users report the service is slow",
+      "root_cause": "memory_leak",
+      "relevant": ["prometheus:docs/practices/histograms.md"],
+      "expect_terms": ["histogram", "quantile"]
+    }
+  ]
+}
