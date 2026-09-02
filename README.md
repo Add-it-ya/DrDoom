@@ -26,7 +26,7 @@ authorises it — with the decision written to an append-only audit log.
 | Retrieval | Done |
 | Agents and model layer | Done |
 | Agent orchestration | Done |
-| Approval gate and audit | Not started |
+| Approval gate and audit | Done |
 | API and dashboard | Not started |
 
 ## Data
