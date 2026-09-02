@@ -197,6 +197,30 @@ and the behaviour was checked in a browser against a payload carrying
 `<script>`, `<img onerror>` and a `javascript:` link — all three are stripped and the text
 displays inert.
 
+### Evaluating the generated half
+
+Three of the four agents are model calls. Until this existed, every published number
+described the classical half, which is the easy half to measure.
+
+The suite scores retrieval and the groundedness of generated diagnoses over 15 labelled
+incident scenarios and 40 retrieval queries, and CI fails the build when a score drops
+below its floor. It runs against **recorded** model responses, so it is free, offline and
+identical on every run — which is what lets it gate a merge rather than being a script
+somebody runs occasionally.
+
+**Groundedness here is lexical support, not entailment.** Each sentence of a diagnosis is
+scored by how much of its distinctive vocabulary appears in the passages retrieved for it.
+A sentence can reuse the context's words and still be wrong, and a correct paraphrase
+scores lower than it deserves. Read it as *how much of this answer is traceable to its
+sources* — the question worth asking of a machine-written diagnosis — not as a truth score.
+
+```bash
+python -m drdoom.evals.run              # replay recorded responses
+python -m drdoom.evals.run --record     # refresh them against a live provider
+```
+
+Token and estimated cost per incident are reported on every API response.
+
 ### Model providers
 
 | Mode | Requires | Cost |
