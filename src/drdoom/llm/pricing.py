@@ -26,8 +26,10 @@ class Rate:
         ) / 1_000_000
 
 
+# Only models whose published rate has actually been checked appear here. An absent
+# model reports its token counts with no cost rather than a guessed one, because a
+# fabricated number in a cost report is worse than an empty field.
 RATES: dict[str, Rate] = {
-    "llama-3.3-70b-versatile": Rate(0.59, 0.79),
     "claude-opus-5": Rate(5.00, 25.00),
     "claude-sonnet-5": Rate(2.00, 10.00),
     "claude-haiku-4-5": Rate(1.00, 5.00),
