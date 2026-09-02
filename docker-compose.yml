@@ -1,0 +1,28 @@
+# One command to run the whole thing locally.
+#
+#   DRDOOM_API_KEYS="you:pick-a-key" GROQ_API_KEY=... docker compose up
+#
+# State is a named volume rather than a bind mount, so suspended investigations survive
+# a container restart without depending on the host's filesystem layout.
+
+services:
+  api:
+    build: .
+    image: drdoom:local
+    ports:
+      - "8000:8000"
+    environment:
+      # Required to approve a remediation. An unset key ring accepts nobody, which is the
+      # correct default for a missing configuration.
+      DRDOOM_API_KEYS: ${DRDOOM_API_KEYS:-}
+      # The default provider. Without it the agents degrade to returning the retrieved
+      # documentation, which still works and says so.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      DRDOOM_LOG_LEVEL: ${DRDOOM_LOG_LEVEL:-INFO}
+      DRDOOM_ENVIRONMENT: production
+    volumes:
+      - drdoom-state:/app/state
+    restart: unless-stopped
+
+volumes:
+  drdoom-state:

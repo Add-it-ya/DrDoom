@@ -1,0 +1,28 @@
+# Secrets never enter the image; credentials arrive at runtime.
+.env
+
+# Regenerable or fetched during the build
+data/
+models/
+state/
+*.sqlite
+audit.jsonl
+
+# Development-only
+.venv/
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.py[cod]
+tests/
+docs/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
