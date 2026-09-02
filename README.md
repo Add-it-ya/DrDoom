@@ -263,6 +263,28 @@ Deliberately not OpenTelemetry: a collector, exporter and backend is a lot of mo
 for a service answering one question, and these records carry the same fields a span would.
 The seam to swap in a real tracer is one function.
 
+### Running it in a container
+
+```bash
+DRDOOM_API_KEYS="you:pick-a-key" GROQ_API_KEY=... docker compose up
+```
+
+Two stages: the builder installs dependencies and bakes in the document corpus and the
+embedding model, so a cold container answers immediately rather than downloading half a
+gigabyte while someone waits. Torch comes from the CPU-only index — the default wheels
+carry CUDA libraries worth several gigabytes and nothing here uses a GPU. Runs as a
+non-root user, health-checks the application rather than the port, and keeps `state/` on a
+volume so suspended investigations survive a restart.
+
+### Security
+
+The system reads documents it does not control, hands them to a model, shows the result to
+an engineer, and can act on that engineer's approval — a chain from untrusted input to
+privileged action. [SECURITY.md](SECURITY.md) sets out the threat model, what is done about
+each threat, and, more usefully, what is **not**: no rate limiting on `/investigate`, no
+Subresource Integrity on the CDN scripts, static API keys with no expiry, and an audit
+chain that is tamper-evident locally but not anchored anywhere an attacker could not reach.
+
 ### Model providers
 
 | Mode | Requires | Cost |
