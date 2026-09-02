@@ -26,6 +26,7 @@ authorises it — with the decision written to an append-only audit log.
 | Retrieval | Done |
 | Agents and model layer | Done |
 | Agent orchestration | Done |
+| Observability | Done |
 | Approval gate and audit | Done |
 | API and dashboard | Done |
 
@@ -241,6 +242,26 @@ python -m drdoom.evals.run --record     # refresh them against a live provider
 Token counts are reported on every API response, with an estimated cost where the model's
 published rate has been checked. An unknown model reports tokens and no cost rather than a
 guessed figure.
+
+### Observability
+
+Structured JSON logs, one object per line, with the incident id on **every** record — set
+once when a run starts and carried through a context variable, so two concurrent
+investigations never interleave into an unreadable stream.
+
+```json
+{"time":"2026-09-02T16:56:16","level":"INFO","logger":"drdoom.timing",
+ "incident":"inc-demo-01","message":"stage complete","stage":"triage","duration_ms":0.4}
+```
+
+Every stage is timed, and `/metrics` reports p50/p95 per stage alongside request counts and
+whether the audit chain still verifies — because "which stage was slow" is the first
+question asked about a slow investigation, and it is unanswerable from a log that only
+records what happened.
+
+Deliberately not OpenTelemetry: a collector, exporter and backend is a lot of moving parts
+for a service answering one question, and these records carry the same fields a span would.
+The seam to swap in a real tracer is one function.
 
 ### Model providers
 
