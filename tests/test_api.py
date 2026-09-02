@@ -384,3 +384,24 @@ def test_the_demo_window_matches_the_expected_shape(client) -> None:
 
     assert len(body["values"]) == 60
     assert len(body["feature_names"]) == len(body["values"][0])
+
+
+def test_metrics_report_where_time_went(client) -> None:
+    """The first question about a slow investigation is which stage was slow."""
+    client.post("/investigate", json=window_payload())
+
+    stages = client.get("/metrics").json()["stages"]
+
+    assert "triage" in stages
+    assert "diagnose" in stages
+    assert stages["triage"]["count"] == 1
+    assert stages["triage"]["p50_ms"] >= 0
+
+
+def test_a_calm_run_times_only_the_stage_that_ran(client) -> None:
+    client.post("/investigate", json=window_payload(anomalous=False))
+
+    stages = client.get("/metrics").json()["stages"]
+
+    assert "triage" in stages
+    assert "diagnose" not in stages
