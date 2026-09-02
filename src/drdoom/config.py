@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "ci", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    llm_provider: Literal["groq", "anthropic", "stub"] = "groq"
 
     @computed_field
     @property

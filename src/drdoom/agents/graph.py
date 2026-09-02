@@ -327,6 +327,46 @@ class Investigator:
         result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
         return self._outcome(thread_id, result)
 
+    def stream_start(
+        self,
+        window: np.ndarray,
+        symptoms: str,
+        thread_id: str,
+        feature_names: list[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield one event per completed node, so a caller can show progress.
+
+        The alternative is a single request that returns nothing for the length of the
+        whole pipeline, which is indistinguishable from a hang.
+        """
+        payload: InvestigationState = {
+            "window": np.asarray(window, dtype=np.float32).tolist(),
+            "feature_names": feature_names or list(self.triage.feature_names),
+            "symptoms": symptoms,
+            "thread_id": thread_id,
+            "tokens": 0,
+            "degraded": False,
+        }
+        yield from self._stream(payload, thread_id)
+
+    def stream_resume(
+        self, thread_id: str, approved: bool, principal: str = UNKNOWN_PRINCIPAL
+    ) -> Iterator[dict[str, Any]]:
+        """Answer a suspended investigation, streaming the remaining nodes."""
+        self.graph.update_state(self._config(thread_id), {"principal": principal})
+        yield from self._stream(Command(resume=approved), thread_id)
+
+    def _stream(self, payload: Any, thread_id: str) -> Iterator[dict[str, Any]]:
+        for chunk in self.graph.stream(
+            payload, config=self._config(thread_id), stream_mode="updates"
+        ):
+            for node, update in chunk.items():
+                if node == "__interrupt__":
+                    yield {"event": "awaiting_approval", "data": dict(update[0].value)}
+                else:
+                    yield {"event": node, "data": _public(update)}
+        yield {"event": "done", "data": {"status": self.status(thread_id).status}}
+
     def status(self, thread_id: str) -> Investigation:
         """Read a thread without advancing it."""
         snapshot = self.graph.get_state(self._config(thread_id))
@@ -338,17 +378,41 @@ class Investigator:
         return Investigation(thread_id, self._status(values), values)
 
 
+def _public(update: Any) -> dict[str, Any]:
+    """Trim a node update to what a client can be shown.
+
+    The raw window is large and uninteresting to a reader, and the approval token is
+    evidence rather than display material.
+    """
+    if not isinstance(update, dict):
+        return {}
+    hidden = {"window", "feature_names", "approval"}
+    return {key: value for key, value in update.items() if key not in hidden}
+
+
 def checkpoint_path() -> Path:
     return get_settings().project_root / "state" / "investigations.sqlite"
 
 
-@contextmanager
-def open_checkpointer(path: Path | None = None) -> Iterator[SqliteSaver]:
-    """Open the durable store, creating its directory if needed."""
+def make_checkpointer(path: Path | None = None) -> tuple[SqliteSaver, sqlite3.Connection]:
+    """Open the durable store and hand back both halves.
+
+    The connection is returned because its lifetime is the caller's problem. A long-lived
+    service must keep it referenced; borrowing the context manager and discarding it
+    leaves the connection to be closed by garbage collection, which fails later and
+    somewhere else.
+    """
     location = path or checkpoint_path()
     location.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(location, check_same_thread=False)
+    return SqliteSaver(connection), connection
+
+
+@contextmanager
+def open_checkpointer(path: Path | None = None) -> Iterator[SqliteSaver]:
+    """Open the durable store for the length of a block."""
+    saver, connection = make_checkpointer(path)
     try:
-        yield SqliteSaver(connection)
+        yield saver
     finally:
         connection.close()
