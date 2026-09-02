@@ -12,7 +12,7 @@ from drdoom.evals.groundedness import (
     score_text,
     split_sentences,
 )
-from drdoom.evals.run import CaseResult, check, render_markdown, summarise
+from drdoom.evals.run import THRESHOLDS, CaseResult, check, render_markdown, summarise
 from drdoom.llm.base import Completion, LLMUnavailableError, user
 from drdoom.llm.recording import (
     RecordingProvider,
@@ -189,12 +189,12 @@ def test_replay_is_deterministic(tmp_path) -> None:
 def sample_summary(**overrides) -> dict:
     base = {
         "cases": 15,
-        "retrieval_hit_at_5": 0.73,
-        "retrieval_mrr": 0.54,
+        "retrieval_hit_at_5": 0.85,
+        "retrieval_mrr": 0.62,
         "retrieval_queries": 40,
-        "diagnosis_retrieval_hit": 0.80,
-        "groundedness": 0.82,
-        "supported_fraction": 0.75,
+        "diagnosis_retrieval_hit": 0.60,
+        "groundedness": 0.59,
+        "supported_fraction": 0.49,
         "expected_terms_present": 0.66,
         "parse_success": 1.0,
         "degraded": 0,
@@ -208,7 +208,7 @@ def test_a_healthy_run_fails_nothing() -> None:
 
 
 def test_a_groundedness_regression_is_caught() -> None:
-    failures = check(sample_summary(groundedness=0.40))
+    failures = check(sample_summary(groundedness=0.20))
 
     assert len(failures) == 1
     assert "groundedness" in failures[0]
@@ -221,6 +221,14 @@ def test_a_parse_failure_is_caught() -> None:
 
 def test_several_regressions_are_all_reported() -> None:
     assert len(check(sample_summary(groundedness=0.1, retrieval_hit_at_5=0.1))) == 2
+
+
+def test_the_floors_sit_below_the_measured_baseline() -> None:
+    """A floor above the measured value makes the suite permanently red and ignored."""
+    measured = sample_summary()
+
+    for name, floor in THRESHOLDS.items():
+        assert floor <= measured[name], f"{name} floor {floor} exceeds baseline {measured[name]}"
 
 
 def test_the_summary_averages_over_cases() -> None:
@@ -251,3 +259,34 @@ def test_failures_are_listed_in_the_report() -> None:
 
     assert "## Failures" in text
     assert "below floor" in text
+
+
+def test_replay_finds_snapshots_recorded_under_another_model_name(tmp_path) -> None:
+    """The model is part of the key, so replay has to use the one that was recorded.
+
+    Guessing it wrong misses every lookup and degrades the pipeline quietly, which reads
+    as a quality regression rather than a configuration mistake.
+    """
+    store = SnapshotStore(tmp_path)
+    RecordingProvider(StubProvider(default="recorded", model="vendor/big-model"), store).complete(
+        [user("question")]
+    )
+
+    replayed = ReplayProvider(store).complete([user("question")])
+
+    assert store.recorded_model() == "vendor/big-model"
+    assert replayed.text == "recorded"
+
+
+def test_the_manifest_is_not_counted_as_a_snapshot(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    store.set_recorded_model("m")
+
+    assert len(store) == 0
+
+
+def test_replay_without_a_manifest_still_reports_a_miss(tmp_path) -> None:
+    provider = ReplayProvider(SnapshotStore(tmp_path))
+
+    with pytest.raises(LLMUnavailableError):
+        provider.complete([user("never recorded")])

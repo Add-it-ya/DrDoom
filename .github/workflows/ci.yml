@@ -66,6 +66,12 @@ jobs:
         if: steps.corpus.outputs.cache-hit != 'true'
         run: uv run python -c "from drdoom.rag import corpus; corpus.download()"
 
+      - name: Restore the embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-${{ hashFiles('src/drdoom/rag/embed.py') }}
+
       - name: Score retrieval and diagnosis
         run: uv run python -m drdoom.evals.run
 

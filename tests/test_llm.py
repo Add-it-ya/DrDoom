@@ -170,6 +170,8 @@ def test_factory_rejects_an_unknown_provider() -> None:
 
 
 def test_groq_without_a_key_fails_clearly(monkeypatch) -> None:
+    # A developer .env would otherwise supply the key this test is about the absence of.
+    monkeypatch.setattr("drdoom.llm.factory.load_env_file", lambda *a, **k: 0)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
 
     with pytest.raises(LLMUnavailableError, match="GROQ_API_KEY"):
