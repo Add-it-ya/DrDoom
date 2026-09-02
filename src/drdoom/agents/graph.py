@@ -46,6 +46,7 @@ from drdoom.agents.triage import TriageAgent
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
 from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash
+from drdoom.observability import Counters, Timings, incident_context, timed
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,7 @@ class Investigator:
         checkpointer: SqliteSaver,
         executor: DryRunExecutor | None = None,
         audit: AuditLog | None = None,
+        counters: Counters | None = None,
     ) -> None:
         self.triage = triage
         self.diagnosis = diagnosis
@@ -147,17 +149,26 @@ class Investigator:
         self.reporting = reporting
         self.executor = executor or DryRunExecutor()
         self.audit = audit or AuditLog()
+        self.counters = counters or Counters()
         self.graph = self._build().compile(checkpointer=checkpointer)
 
     # --- nodes ---------------------------------------------------------------------
 
     def _triage_node(self, state: InvestigationState) -> dict:
+        with timed("triage", self._timings(state)):
+            return self._triage(state)
+
+    def _triage(self, state: InvestigationState) -> dict:
         window = np.asarray(state["window"], dtype=np.float32)
         result = self.triage.run(window)
         logger.info("triage: anomaly=%s cause=%s", result.is_anomaly, result.root_cause)
         return {"triage": result.as_dict()}
 
     def _diagnose_node(self, state: InvestigationState) -> dict:
+        with timed("diagnose", self._timings(state)):
+            return self._diagnose(state)
+
+    def _diagnose(self, state: InvestigationState) -> dict:
         triage = state["triage"]
         outcome = self.diagnosis.run(state["symptoms"], triage.get("root_cause"))
         return {
@@ -168,6 +179,10 @@ class Investigator:
         }
 
     def _remediate_node(self, state: InvestigationState) -> dict:
+        with timed("remediate", self._timings(state)):
+            return self._remediate(state)
+
+    def _remediate(self, state: InvestigationState) -> dict:
         outcome = self.remediation.run(
             state["diagnosis"]["summary"], state["triage"].get("root_cause")
         )
@@ -202,6 +217,10 @@ class Investigator:
         return {"decision": APPROVED, "approval": asdict(ApprovalToken.issue(plan, principal))}
 
     def _execute_node(self, state: InvestigationState) -> dict:
+        with timed("execute", self._timings(state)):
+            return self._execute(state)
+
+    def _execute(self, state: InvestigationState) -> dict:
         """Run the approved plan, and write what happened to the audit log."""
         plan = RemediationPlan.model_validate(state["plan"])
         approval = state.get("approval")
@@ -242,6 +261,10 @@ class Investigator:
         return {"escalation": message, "execution": {"executed": False, "kind": "rejected"}}
 
     def _report_node(self, state: InvestigationState) -> dict:
+        with timed("report", self._timings(state)):
+            return self._report(state)
+
+    def _report(self, state: InvestigationState) -> dict:
         diagnosis = Diagnosis.model_validate(state["diagnosis"])
         plan = RemediationPlan.model_validate(state["plan"])
         citations = [Citation.model_validate(item) for item in state.get("citations", [])]
@@ -255,6 +278,12 @@ class Investigator:
         if state.get("escalation"):
             markdown += f"\n> {state['escalation']}\n"
         return {"report": markdown, **_usage(outcome.completions)}
+
+    def _timings(self, state: InvestigationState) -> Timings:
+        """A per-call collector that also feeds the process-wide counters."""
+        collector = Timings()
+        collector.record = _forwarding(collector, self.counters)  # type: ignore[method-assign]
+        return collector
 
     @staticmethod
     def _route_after_triage(state: InvestigationState) -> str:
@@ -333,14 +362,17 @@ class Investigator:
             "output_tokens": 0,
             "degraded": False,
         }
-        return self._outcome(thread_id, self.graph.invoke(payload, config=self._config(thread_id)))
+        with incident_context(thread_id):
+            result = self.graph.invoke(payload, config=self._config(thread_id))
+        return self._outcome(thread_id, result)
 
     def resume(
         self, thread_id: str, approved: bool, principal: str = UNKNOWN_PRINCIPAL
     ) -> Investigation:
         """Answer a suspended investigation and run it to completion."""
         self.graph.update_state(self._config(thread_id), {"principal": principal})
-        result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
+        with incident_context(thread_id):
+            result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
         return self._outcome(thread_id, result)
 
     def stream_start(
@@ -394,6 +426,16 @@ class Investigator:
                 thread_id, "awaiting_approval", values, dict(snapshot.interrupts[0].value)
             )
         return Investigation(thread_id, self._status(values), values)
+
+
+def _forwarding(collector: Timings, counters: Counters):
+    """Record a stage on the per-call collector and the process counters at once."""
+
+    def record(stage: str, milliseconds: float) -> None:
+        collector.stages[stage] = round(milliseconds, 1)
+        counters.observe(stage, milliseconds)
+
+    return record
 
 
 def _usage(completions: list) -> dict[str, Any]:

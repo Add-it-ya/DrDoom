@@ -40,6 +40,7 @@ from drdoom.agents.graph import Investigation, Investigator
 from drdoom.api.auth import KeyRing, Principal, configure, require_principal
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
+from drdoom.observability import configure_logging, incident_context
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,10 @@ class Service:
     def count(self, name: str) -> None:
         self.counters[name] = self.counters.get(name, 0) + 1
 
+    @property
+    def stage_latencies(self) -> dict[str, Any]:
+        return self.investigator.counters.snapshot()
+
 
 _service: Service | None = None
 
@@ -172,6 +177,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        settings = get_settings()
+        configure_logging(settings.log_level, structured=settings.environment != "local")
         if _service is None:
             from drdoom.api.factory import build_service
 
@@ -195,10 +202,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     @app.get("/metrics")
     def metrics(current: CurrentService) -> dict[str, Any]:
+        """Traffic, where time goes, and whether the decision record is intact."""
         valid, reason = current.audit.verify()
+        latencies = current.stage_latencies
         return {
             "uptime_seconds": round(time.monotonic() - current.started_at, 1),
             "requests": dict(current.counters),
+            "stages": latencies["stages"],
             "audit_entries": len(current.audit.entries()),
             "audit_chain_intact": valid,
             "audit_chain_detail": reason,
@@ -251,7 +261,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     @app.get("/incidents/{incident_id}", response_model=InvestigationView)
     def read_incident(incident_id: str, current: CurrentService) -> InvestigationView:
-        outcome = current.investigator.status(incident_id)
+        with incident_context(incident_id):
+            outcome = current.investigator.status(incident_id)
         if outcome.status == "no_incident" and not outcome.state:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such incident")
         return InvestigationView.of(outcome)
