@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from drdoom.config import load_env_file
 from drdoom.llm.base import LLMProvider, LLMUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ PROVIDERS = ("groq", "anthropic", "stub")
 
 def build_provider(name: str = "groq", model: str | None = None) -> LLMProvider:
     """Return a provider by name, raising if it cannot be constructed."""
+    load_env_file()
     if name == "groq":
         from drdoom.llm.groq import DEFAULT_MODEL, GroqProvider
 

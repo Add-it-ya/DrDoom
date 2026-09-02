@@ -7,6 +7,7 @@ from the repository root, from a subdirectory, or from inside a container.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -69,6 +70,30 @@ class Settings(BaseSettings):
     def ensure_directories(self) -> None:
         for directory in self.writable_dirs():
             directory.mkdir(parents=True, exist_ok=True)
+
+
+def load_env_file(path: Path | None = None) -> int:
+    """Copy ``KEY=value`` lines from a local .env into the process environment.
+
+    Provider credentials are read from the environment rather than from settings, so
+    that a key never lands in a settings object that might be logged or serialised.
+    Existing variables win: what is already exported is more specific than a file.
+    """
+    location = path or PROJECT_ROOT / ".env"
+    if not location.is_file():
+        return 0
+
+    loaded = 0
+    for raw in location.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name, value = name.strip(), value.strip().strip("\"'")
+        if name and value and name not in os.environ:
+            os.environ[name] = value
+            loaded += 1
+    return loaded
 
 
 @lru_cache(maxsize=1)
