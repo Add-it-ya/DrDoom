@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
     "scikit-learn>=1.5,<2",
+    "sentence-transformers>=3.0,<6",
     "torch>=2.4,<3",
     "xgboost>=2.1,<4",
 ]
