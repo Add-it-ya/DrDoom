@@ -22,7 +22,7 @@ authorises it — with the decision written to an append-only audit log.
 | Project foundations | Done |
 | Data pipeline | Done |
 | Anomaly detection | Done |
-| Root-cause classification | Not started |
+| Root-cause classification | Done |
 | Retrieval | Not started |
 | Agent orchestration | Not started |
 | Approval gate and audit | Not started |
@@ -69,6 +69,29 @@ which inflates F1 and is not comparable to these numbers.
 
 ```bash
 python -m drdoom.detect.compare
+```
+
+### Root cause
+
+Once a window is flagged, a gradient-boosted classifier over window summary statistics
+names the cause. Cross-validation folds are grouped by incident so overlapping slices of
+one outage never straddle a fold, and verdicts are pooled per incident by majority vote.
+Full card in [docs/classifier-card.md](docs/classifier-card.md).
+
+| Dataset | Classes | Test incidents | Event macro F1 | 95% CI |
+|---|---|---:|---:|---|
+| Real telemetry | 2 signature archetypes | 59 | 0.827 | [0.726, 0.915] |
+| Synthetic | 4 causal classes | 300 | 0.997 | [0.989, 1.000] |
+
+The two are never pooled, because they are not the same task. The synthetic generator
+picks a cause and writes its signature into the metrics, so 0.997 measures the generator's
+separability more than the model's skill. The real dataset labels which of its 38
+dimensions deviated but publishes no mapping from dimension to meaning, so its classes are
+signature archetypes — narrow against broad — which makes that task subsystem attribution
+rather than causal analysis. The weaker claim is the true one.
+
+```bash
+python -m drdoom.classify.train
 ```
 
 ## Getting started

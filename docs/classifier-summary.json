@@ -1,0 +1,160 @@
+[
+  {
+    "source": "smd",
+    "classes": [
+      "broad_signature",
+      "narrow_signature"
+    ],
+    "best_cv_macro_f1": 0.7435,
+    "best_params": {
+      "max_depth": 5,
+      "learning_rate": 0.04279909806035244,
+      "n_estimators": 254,
+      "subsample": 0.6563696899899051,
+      "colsample_bytree": 0.9010984903770198,
+      "min_child_weight": 1,
+      "reg_lambda": 8.862326508576253
+    },
+    "split_seed": 0,
+    "min_events_per_class_per_split": 28,
+    "test_events": 59,
+    "test_windows": 1001,
+    "event_macro_f1": 0.8265,
+    "event_macro_f1_ci": [
+      0.7256,
+      0.9152
+    ],
+    "event_accuracy": 0.8305,
+    "window_macro_f1": 0.5804,
+    "events_per_class": {
+      "broad_signature": 29,
+      "narrow_signature": 30
+    },
+    "confusion": [
+      [
+        29,
+        0
+      ],
+      [
+        10,
+        20
+      ]
+    ],
+    "feature_importance": {
+      "m24_std": 0.10164963454008102,
+      "m30_std": 0.061913635581731796,
+      "m23_std": 0.028230689465999603,
+      "m37_std": 0.023314159363508224,
+      "m10_std": 0.01926443912088871,
+      "m03_std": 0.017911674454808235,
+      "m30_mean": 0.017486080527305603,
+      "m00_std": 0.017231648787856102,
+      "m08_max": 0.01604878529906273,
+      "m29_max": 0.013890184462070465,
+      "m04_half_diff": 0.013744557276368141,
+      "m18_std": 0.012729858048260212
+    },
+    "archetype_support": {
+      "narrow_signature": 181,
+      "broad_signature": 109,
+      "other": 37
+    },
+    "archetype_profiles": {
+      "narrow_signature": [
+        13,
+        9,
+        14,
+        12,
+        15,
+        10,
+        11
+      ],
+      "broad_signature": [
+        1,
+        31,
+        21,
+        22,
+        28,
+        19,
+        20,
+        2
+      ]
+    }
+  },
+  {
+    "source": "synthetic",
+    "classes": [
+      "deploy_regression",
+      "downstream_outage",
+      "memory_leak",
+      "traffic_spike"
+    ],
+    "best_cv_macro_f1": 0.9445,
+    "best_params": {
+      "max_depth": 8,
+      "learning_rate": 0.12696425673884243,
+      "n_estimators": 399,
+      "subsample": 0.9996020093188607,
+      "colsample_bytree": 0.8330718303798554,
+      "min_child_weight": 6,
+      "reg_lambda": 0.014954740328113877
+    },
+    "split_seed": 0,
+    "min_events_per_class_per_split": 43,
+    "test_events": 300,
+    "test_windows": 5014,
+    "event_macro_f1": 0.9967,
+    "event_macro_f1_ci": [
+      0.9891,
+      1.0
+    ],
+    "event_accuracy": 0.9967,
+    "window_macro_f1": 0.9528,
+    "events_per_class": {
+      "deploy_regression": 72,
+      "downstream_outage": 78,
+      "memory_leak": 72,
+      "traffic_spike": 78
+    },
+    "confusion": [
+      [
+        72,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        77,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        72,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        78
+      ]
+    ],
+    "feature_importance": {
+      "queue_depth_std": 0.32838261127471924,
+      "error_rate_pct_max": 0.21049179136753082,
+      "error_rate_pct_std": 0.07600477337837219,
+      "latency_ms_std": 0.07519398629665375,
+      "queue_depth_max": 0.061766043305397034,
+      "error_rate_pct_mean": 0.04226153716444969,
+      "error_rate_pct_min": 0.028477482497692108,
+      "latency_ms_slope": 0.024611329659819603,
+      "error_rate_pct_slope": 0.018998363986611366,
+      "cpu_pct_std": 0.01673765294253826,
+      "queue_depth_mean": 0.013624710962176323,
+      "latency_ms_max": 0.013233424164354801
+    }
+  }
+]
