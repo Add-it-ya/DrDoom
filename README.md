@@ -24,6 +24,7 @@ authorises it — with the decision written to an append-only audit log.
 | Anomaly detection | Done |
 | Root-cause classification | Done |
 | Retrieval | Done |
+| Agents and model layer | Done |
 | Agent orchestration | Not started |
 | Approval gate and audit | Not started |
 | API and dashboard | Not started |
@@ -121,6 +122,38 @@ project exists to avoid.
 ```bash
 python -m drdoom.rag.evaluate
 ```
+
+### Agents
+
+Four agents: triage decides whether anything is wrong and what kind, diagnosis explains it
+from retrieved documentation, remediation proposes a risk-rated fix, and reporting writes
+the postmortem once a decision exists.
+
+Two properties matter more than the prompts.
+
+**Whether an action needs a human is decided by the type, not the model.** On
+`RemediationPlan`, `requires_approval` is a computed field derived from `risk_level`. The
+model is never asked for it, and a value supplied anyway is ignored — a system whose
+safety argument is "a human approves risky actions" cannot let the supervised thing
+decide what counts as risky.
+
+**Every structured response is validated, and one repair is allowed.** A malformed plan
+goes back to the model with the validation error attached, once. Not a loop: a model that
+cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
+repair turns a bad response into a bill. If the provider is unreachable the agents degrade
+to the retrieved documentation and say so, rather than inventing a summary.
+
+### Model providers
+
+| Mode | Requires | Cost |
+|---|---|---|
+| Tests and CI | nothing — a stub provider, no key, no network | free |
+| Local and demo | `GROQ_API_KEY` | free tier |
+| Optional | `ANTHROPIC_API_KEY` + `uv sync --extra anthropic` | paid |
+
+Groq is the default because a demonstration nobody can afford to run is not a
+demonstration. Anthropic is a swappable alternative, kept out of the default install so
+nothing unused ships.
 
 ## Getting started
 
