@@ -30,6 +30,7 @@ from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
 from drdoom.executor import DryRunExecutor
+from drdoom.llm.base import LLMUnavailableError
 from drdoom.llm.stub import StubProvider
 from drdoom.rag.corpus import Document
 from drdoom.rag.index import BM25Index
@@ -424,3 +425,39 @@ def test_the_audit_chain_survives_several_incidents(tmp_path) -> None:
     log = AuditLog(audit_path)
     assert len(log.entries()) == 3
     assert log.verify() == (True, "chain intact")
+
+
+# --- when the model is unreachable --------------------------------------------------
+
+
+def test_an_unreachable_provider_still_reaches_the_gate(tmp_path) -> None:
+    """No model is no reason to crash, and no reason to act unattended either."""
+    down = StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=tmp_path / "audit.jsonl")
+        for agent in (investigator.diagnosis, investigator.remediation, investigator.reporting):
+            agent.provider = down
+
+        suspended = investigator.start(disturbed_window(), "latency climbing", "incident")
+        outcome = investigator.resume("incident", approved=True, principal="aditya")
+
+    assert suspended.status == "awaiting_approval"
+    assert suspended.state["degraded"] is True
+    assert outcome.status == "complete"
+    assert outcome.executed is False
+    assert outcome.execution["kind"] == "unrecognised"
+    assert outcome.report
+
+
+def test_a_plan_written_without_a_model_is_flagged_as_degraded(tmp_path) -> None:
+    """A diagnosis that worked must not hide a plan that did not, or forget who answered."""
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.remediation.provider = StubProvider(
+            fail_with=LLMUnavailableError("unreachable")
+        )
+
+        suspended = investigator.start(disturbed_window(), "latency climbing", "incident")
+
+    assert suspended.state["degraded"] is True
+    assert suspended.state["model"] == "stub-1"

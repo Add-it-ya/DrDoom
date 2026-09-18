@@ -15,6 +15,7 @@ from drdoom.agents.schemas import Diagnosis, Postmortem, RemediationPlan
 from drdoom.agents.triage import TriageAgent, TriageResult, window_to_series
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
+from drdoom.executor import match_action
 from drdoom.llm.base import LLMInvalidOutputError, LLMUnavailableError
 from drdoom.llm.stub import SequenceProvider, StubProvider
 from drdoom.rag.corpus import Document
@@ -324,6 +325,35 @@ def test_token_usage_is_reported() -> None:
     agent = RemediationAgent(corpus_retriever(), StubProvider(default=PLAN_JSON))
 
     assert agent.run("summary", "memory_leak").tokens > 0
+
+
+def test_remediation_degrades_instead_of_failing_when_the_provider_is_down() -> None:
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    result = agent.run("Memory grew until the container was killed.", "memory_leak")
+
+    assert result.degraded is True
+    assert result.citations
+    assert result.completions == []
+
+
+def test_a_plan_written_without_a_model_still_needs_a_human() -> None:
+    """Its risk is unknown, and an unknown risk is never treated as safe."""
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert agent.run("summary", "memory_leak").plan.requires_approval is True
+
+
+def test_a_plan_written_without_a_model_proposes_nothing_executable() -> None:
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert match_action(agent.run("summary", "memory_leak").plan.immediate_action) is None
 
 
 # --- reporting ---------------------------------------------------------------------

@@ -186,7 +186,11 @@ class Investigator:
         outcome = self.remediation.run(
             state["diagnosis"]["summary"], state["triage"].get("root_cause")
         )
-        return {"plan": outcome.plan.model_dump(), **_usage(outcome.completions)}
+        update = {"plan": outcome.plan.model_dump(), **_usage(outcome.completions)}
+        if outcome.degraded:
+            # Set only on failure, so a plan that worked cannot clear a diagnosis that did not.
+            update["degraded"] = True
+        return update
 
     def _approval_node(self, state: InvestigationState) -> dict:
         """Decide, and on approval mint the token that authorises this exact plan."""
@@ -439,13 +443,19 @@ def _forwarding(collector: Timings, counters: Counters):
 
 
 def _usage(completions: list) -> dict[str, Any]:
-    """Roll a node's completions into the counters the state accumulates."""
-    return {
+    """Roll a node's completions into the counters the state accumulates.
+
+    The model is recorded only when one answered, so a node that degraded does not erase
+    the name of the model an earlier node used.
+    """
+    usage: dict[str, Any] = {
         "tokens": sum(c.total_tokens for c in completions),
         "input_tokens": sum(c.input_tokens for c in completions),
         "output_tokens": sum(c.output_tokens for c in completions),
-        "model": completions[0].model if completions else "unknown",
     }
+    if completions:
+        usage["model"] = completions[0].model
+    return usage
 
 
 def _public(update: Any) -> dict[str, Any]:
