@@ -508,3 +508,44 @@ def test_a_calm_run_times_only_the_stage_that_ran(client) -> None:
 
     assert "triage" in stages
     assert "diagnose" not in stages
+
+
+# --- a run that stops partway -------------------------------------------------------
+
+
+class BrokenRetriever:
+    def search(self, query: str, k: int = 10):
+        raise RuntimeError("index is gone at /secret/path")
+
+
+@pytest.fixture
+def broken(tmp_path):
+    service = build_service(tmp_path)
+    service.investigator.diagnosis.retriever = BrokenRetriever()
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+    with TestClient(app) as test_client:
+        yield test_client
+    set_service(None)
+
+
+def test_a_run_that_stops_answers_500_with_where_to_look(broken) -> None:
+    response = broken.post("/investigate", json=window_payload())
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["status"] == "failed"
+    assert "/secret/path" not in response.text
+
+    incident = broken.get(f"/incidents/{detail['incident_id']}").json()
+    assert incident["status"] == "failed"
+    assert incident["is_anomaly"] is True
+
+
+def test_a_stream_that_stops_ends_with_a_failed_event(broken) -> None:
+    with broken.stream("POST", "/investigate/stream", json=window_payload()) as stream:
+        body = "".join(stream.iter_text())
+
+    events = [line[7:].strip() for line in body.splitlines() if line.startswith("event: ")]
+    assert events[-2:] == ["failed", "done"]
+    assert '"status": "failed"' in body
+    assert "/secret/path" not in body

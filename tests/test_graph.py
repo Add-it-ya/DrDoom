@@ -480,3 +480,81 @@ def test_a_model_that_never_answers_usably_still_reaches_the_gate(tmp_path) -> N
     assert outcome.status == "complete"
     assert outcome.executed is False
     assert outcome.tokens > 0
+
+
+# --- a run that stops partway -------------------------------------------------------
+
+
+class BrokenRetriever:
+    """Stands in for any fault a node does not handle: a lost index, a full disk, a bug."""
+
+    def search(self, query: str, k: int = 10):
+        raise RuntimeError("index is gone")
+
+
+def test_a_run_that_stops_partway_reads_failed_not_no_incident(tmp_path) -> None:
+    """A crashed incident used to read exactly like a quiet window."""
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.diagnosis.retriever = BrokenRetriever()
+
+        with pytest.raises(RuntimeError):
+            investigator.start(disturbed_window(), "latency climbing", "incident")
+        outcome = investigator.status("incident")
+
+    assert outcome.status == "failed"
+    assert outcome.is_anomaly is True
+    assert outcome.report is None
+
+
+def test_an_unknown_thread_is_still_no_incident(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        assert make_investigator(checkpointer).status("nothing").status == "no_incident"
+
+
+def test_a_stream_that_stops_says_so_instead_of_breaking_off(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.diagnosis.retriever = BrokenRetriever()
+
+        events = list(investigator.stream_start(disturbed_window(), "latency", "incident"))
+
+    names = [event["event"] for event in events]
+    assert names == ["triage", "failed", "done"]
+    assert "index is gone" not in json.dumps(events)
+    assert events[-1]["data"]["status"] == "failed"
+
+
+def test_every_streamed_log_line_carries_its_incident(tmp_path) -> None:
+    """The dashboard's path, driven the way a server drives it: one step per call, each in
+    a fresh context. A variable set once at the top of the generator would not survive."""
+    import contextvars
+    import logging
+
+    from drdoom.observability import current_incident
+
+    seen: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.name.startswith("drdoom"):
+                seen.append(current_incident.get())
+
+    handler = Capture()
+    root = logging.getLogger()
+    previous = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    try:
+        with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+            stream = make_investigator(checkpointer).stream_start(
+                disturbed_window(), "latency climbing", "tagged"
+            )
+            while contextvars.copy_context().run(next, stream, None) is not None:
+                pass
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous)
+
+    assert seen
+    assert set(seen) == {"tagged"}

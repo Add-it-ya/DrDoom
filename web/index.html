@@ -339,7 +339,8 @@ function handleEvent(block) {
   else if (name === "awaiting_approval") { showGate(data); }
   else if (name === "execute" || name === "escalate") { showOutcome(data); }
   else if (name === "report") { showReport(data.report); }
-  else if (name === "done") { log("finished: " + data.status); }
+  else if (name === "failed") { log("stopped: " + data.detail, true); }
+  else if (name === "done") { log("finished: " + data.status, data.status === "failed"); }
 }
 
 async function decide(approved) {

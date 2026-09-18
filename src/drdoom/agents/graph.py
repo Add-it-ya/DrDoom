@@ -17,6 +17,11 @@ carrying a token issued at the moment of the decision; a rejected one is escalat
 never reaches the executor at all. Both are written to the audit log, because a review
 needs to see the refusals as much as the actions.
 
+A run that stops partway is reported as ``failed``, never as ``no_incident``. The two
+used to be indistinguishable -- both are a state with no report -- so an incident whose
+diagnosis crashed read the same as a quiet window. What separates them is triage: only a
+window triage cleared is not an incident.
+
 The state is deliberately plain json. A numpy array or a pydantic model in the state would
 serialise inconsistently or not at all; models are validated at the edges and stored as
 dictionaries.
@@ -50,7 +55,7 @@ from drdoom.observability import Counters, Timings, incident_context, timed
 
 logger = logging.getLogger(__name__)
 
-Status = Literal["no_incident", "awaiting_approval", "complete", "rejected"]
+Status = Literal["no_incident", "awaiting_approval", "complete", "rejected", "failed"]
 
 AUTO_APPROVED = "auto_approved"
 APPROVED = "approved_by_human"
@@ -58,6 +63,11 @@ REJECTED = "rejected_by_human"
 
 POLICY_PRINCIPAL = "policy:low_risk"
 UNKNOWN_PRINCIPAL = "unknown"
+
+# What a caller is told when a run stops. The exception itself goes to the log, where the
+# incident id ties it to this run, and not to a client that may be a browser.
+STOPPED_DETAIL = "the investigation stopped at an internal error; the service log has the cause"
+_STOPPED: dict[str, Any] = {}
 
 
 class InvestigationState(TypedDict, total=False):
@@ -346,9 +356,14 @@ class Investigator:
 
     @staticmethod
     def _status(state: dict[str, Any]) -> Status:
-        if not state.get("report"):
+        if state.get("report"):
+            return "rejected" if state.get("decision") == REJECTED else "complete"
+        triage = state.get("triage")
+        if not state or (triage is not None and not triage.get("is_anomaly")):
             return "no_incident"
-        return "rejected" if state.get("decision") == REJECTED else "complete"
+        # There is a state, and either triage never finished or it found an incident, yet
+        # no report was written and nothing is waiting for a human: the run stopped.
+        return "failed"
 
     def start(
         self,
@@ -413,15 +428,38 @@ class Investigator:
         yield from self._stream(Command(resume=approved), thread_id)
 
     def _stream(self, payload: Any, thread_id: str) -> Iterator[dict[str, Any]]:
-        for chunk in self.graph.stream(
-            payload, config=self._config(thread_id), stream_mode="updates"
-        ):
+        """Advance the graph one node at a time, inside the incident's log context.
+
+        The context is entered around each step rather than around the whole generator.
+        A server drives a streaming response from a thread pool, one step per call and not
+        necessarily in the same context, so a variable set once at the top would neither
+        reach the later steps nor be safe to reset. Each step is where the work happens,
+        so each step is what has to be tagged.
+
+        A step that raises ends the stream with a ``failed`` event instead of cutting the
+        connection mid-response. The status line that follows says ``failed`` too.
+        """
+        updates = self.graph.stream(payload, config=self._config(thread_id), stream_mode="updates")
+        while True:
+            with incident_context(thread_id):
+                try:
+                    chunk = next(updates, None)
+                except Exception:
+                    logger.exception("investigation stopped at an internal error")
+                    chunk = _STOPPED
+            if chunk is None:
+                break
+            if chunk is _STOPPED:
+                yield {"event": "failed", "data": {"detail": STOPPED_DETAIL}}
+                break
             for node, update in chunk.items():
                 if node == "__interrupt__":
                     yield {"event": "awaiting_approval", "data": dict(update[0].value)}
                 else:
                     yield {"event": node, "data": _public(update)}
-        yield {"event": "done", "data": {"status": self.status(thread_id).status}}
+        with incident_context(thread_id):
+            status = self.status(thread_id).status
+        yield {"event": "done", "data": {"status": status}}
 
     def status(self, thread_id: str) -> Investigation:
         """Read a thread without advancing it."""

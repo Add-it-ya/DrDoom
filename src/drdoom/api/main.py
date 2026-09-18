@@ -43,7 +43,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from drdoom.agents.graph import Investigation, Investigator
+from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
 from drdoom.api.auth import KeyRing, Principal, configure, require_principal
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
@@ -205,6 +205,19 @@ def _window(payload: MetricWindow, current: Service) -> np.ndarray:
     return window
 
 
+def _stopped(incident_id: str, error: Exception) -> HTTPException:
+    """A run that raised, logged under its incident and answered with where to look.
+
+    The id is returned so the partial state can be read back, and reads as ``failed``.
+    """
+    with incident_context(incident_id):
+        logger.error("investigation stopped at an internal error", exc_info=error)
+    return HTTPException(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        {"incident_id": incident_id, "status": "failed", "message": STOPPED_DETAIL},
+    )
+
+
 def _sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
     for event in events:
         yield f"event: {event['event']}\ndata: {json.dumps(event['data'], default=str)}\n\n"
@@ -261,9 +274,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         current.count("investigate")
         window = _window(payload, current)
         incident_id = uuid.uuid4().hex[:12]
-        outcome = current.investigator.start(
-            window, payload.symptoms, incident_id, payload.feature_names
-        )
+        try:
+            outcome = current.investigator.start(
+                window, payload.symptoms, incident_id, payload.feature_names
+            )
+        except Exception as error:
+            raise _stopped(incident_id, error) from error
         logger.info("incident %s finished in state %s", incident_id, outcome.status)
         return InvestigationView.of(outcome)
 
@@ -341,9 +357,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
                 f"incident {incident_id} is not waiting for a decision",
             )
 
-        outcome = current.investigator.resume(
-            incident_id, approved=decision.approved, principal=principal.name
-        )
+        try:
+            outcome = current.investigator.resume(
+                incident_id, approved=decision.approved, principal=principal.name
+            )
+        except Exception as error:
+            raise _stopped(incident_id, error) from error
         logger.info("incident %s decided by %s", incident_id, principal.name)
         return InvestigationView.of(outcome)
 
