@@ -78,7 +78,7 @@ def build_service(tmp_path: Path, diagnosis=DIAGNOSIS, postmortem=POSTMORTEM) ->
 
     checkpointer, connection = make_checkpointer(tmp_path / "state.sqlite")
     investigator = Investigator(
-        TriageAgent(detector, threshold=5.0, feature_names=["a", "b"]),
+        TriageAgent(detector, threshold=5.0, feature_names=["a", "b"], window_size=60),
         DiagnosisAgent(retriever, StubProvider(default=diagnosis)),
         RemediationAgent(retriever, StubProvider(default=PLAN)),
         ReportingAgent(StubProvider(default=postmortem)),
@@ -151,6 +151,101 @@ def test_a_malformed_window_is_rejected(client, values) -> None:
     response = client.post("/investigate", json={"values": values})
 
     assert response.status_code == 422
+
+
+# --- what a window must be before anything is spent on it -------------------------
+
+
+def with_value(value: float) -> dict:
+    body = window_payload()
+    body["values"][10][1] = value
+    return body
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_missing_or_infinite_value_is_refused_before_any_model_call(tmp_path, bad) -> None:
+    """NaN compares false against the threshold, so it used to read as an incident."""
+    service = build_service(tmp_path)
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+    # Sent as raw json: Python's encoder, like many clients, writes NaN and Infinity as
+    # bare tokens, and the server's parser accepts them.
+    with TestClient(app) as local:
+        response = local.post(
+            "/investigate",
+            content=json.dumps(with_value(bad)),
+            headers={"Content-Type": "application/json"},
+        )
+    set_service(None)
+
+    assert response.status_code == 422
+    assert "must be finite" in response.json()["detail"][0]["msg"]
+    assert service.investigator.diagnosis.provider.calls == []
+    assert service.investigator.remediation.provider.calls == []
+    assert service.audit.entries() == []
+
+
+@pytest.mark.parametrize("rows", [2, 59, 61, 120])
+def test_a_window_of_another_length_is_refused(client, rows) -> None:
+    values = (disturbed_window().tolist() * 2)[:rows]
+
+    response = client.post("/investigate", json={"values": values, "feature_names": ["a", "b"]})
+
+    assert response.status_code == 422
+    assert "expected 60 timesteps" in response.json()["detail"]
+
+
+def test_a_window_with_another_number_of_metrics_is_refused(client) -> None:
+    values = np.zeros((60, 3)).tolist()
+
+    response = client.post("/investigate", json={"values": values})
+
+    assert response.status_code == 422
+    assert "expected 2 metrics" in response.json()["detail"]
+
+
+def test_metric_names_in_another_order_are_refused_not_ignored(client) -> None:
+    """Swapped columns used to be scored as if they were in the service's order."""
+    body = window_payload() | {"feature_names": ["b", "a"]}
+
+    response = client.post("/investigate", json=body)
+
+    assert response.status_code == 422
+    assert "in that order" in response.json()["detail"]
+
+
+def test_a_window_without_names_is_taken_in_the_service_order(client) -> None:
+    body = window_payload(anomalous=False)
+    del body["feature_names"]
+
+    assert client.post("/investigate", json=body).status_code == 200
+
+
+def test_an_oversized_window_is_refused_before_it_becomes_an_array(client) -> None:
+    response = client.post("/investigate", json={"values": [[1.0, 2.0]] * 5_001})
+
+    assert response.status_code == 422
+
+
+def test_a_refusal_does_not_echo_the_rejected_window(client) -> None:
+    """The default handler returned every value back; the reason is enough."""
+    response = client.post("/investigate", json={"values": [[1.0, 2.0]] * 5_001})
+
+    assert "input" not in response.json()["detail"][0]
+    assert len(response.content) < 1_000
+
+
+def test_overlong_symptoms_are_refused(client) -> None:
+    body = window_payload() | {"symptoms": "x" * 2_001}
+
+    assert client.post("/investigate", json=body).status_code == 422
+
+
+def test_a_bad_stream_request_fails_with_a_status_not_halfway_through(client) -> None:
+    """Refused before the response starts, so the client is never told 200 first."""
+    short = {"values": disturbed_window().tolist()[:30], "feature_names": ["a", "b"]}
+
+    with client.stream("POST", "/investigate/stream", json=short) as stream:
+        assert stream.status_code == 422
 
 
 # --- authentication ----------------------------------------------------------------

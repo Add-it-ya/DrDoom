@@ -116,7 +116,13 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     checkpointer, connection = make_checkpointer(checkpoint_path())
 
     investigator = Investigator(
-        TriageAgent(detector, threshold, feature_names, classifier=build_classifier()),
+        TriageAgent(
+            detector,
+            threshold,
+            feature_names,
+            classifier=build_classifier(),
+            window_size=WINDOW,
+        ),
         DiagnosisAgent(retriever, model),
         RemediationAgent(retriever, model),
         ReportingAgent(model),

@@ -211,6 +211,43 @@ def test_a_failing_classifier_still_reports_the_incident() -> None:
     assert result.root_cause is None
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_a_missing_or_infinite_value_is_refused_not_scored(bad: float) -> None:
+    """NaN compares false against any threshold, which would read as an incident."""
+    agent = TriageAgent(fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"])
+    window = quiet_window(seed=1)
+    window[10, 1] = bad
+
+    with pytest.raises(ValueError, match="timestep 10, metric 'b'"):
+        agent.run(window)
+
+
+def test_a_window_with_the_wrong_number_of_metrics_is_refused() -> None:
+    agent = TriageAgent(fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"])
+
+    with pytest.raises(ValueError, match="expected 2 metrics"):
+        agent.run(np.zeros((60, 3), dtype=np.float32))
+
+
+@pytest.mark.parametrize("rows", [2, 59, 61, 500])
+def test_a_window_of_another_length_is_refused_when_one_is_calibrated(rows: int) -> None:
+    """The threshold was chosen for one length; a score over another is another statistic."""
+    agent = TriageAgent(
+        fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"], window_size=60
+    )
+
+    with pytest.raises(ValueError, match="expected 60 timesteps"):
+        agent.run(np.random.default_rng(0).normal(50, 1, (rows, 2)).astype(np.float32))
+
+
+def test_the_calibrated_length_is_accepted() -> None:
+    agent = TriageAgent(
+        fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"], window_size=60
+    )
+
+    assert agent.run(quiet_window(seed=1)).is_anomaly is False
+
+
 def test_triage_result_serialises() -> None:
     row = TriageResult(is_anomaly=True, score=1.5, threshold=1.0, root_cause="x", confidence=0.9)
 

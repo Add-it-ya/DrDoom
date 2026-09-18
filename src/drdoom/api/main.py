@@ -14,6 +14,11 @@ records. Reading is open; deciding is not.
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
 returns the same outcome rather than a 404 or a second execution.
 
+**A window is checked before anything is spent on it.** Values must be finite and the
+shape must be the one the detector's threshold was calibrated for, or the request is
+refused with 422 before the graph starts. A malformed payload costs no retrieval and no
+model call, and never reaches the approval gate as a phantom incident.
+
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
 a sanitiser. See the note in ``web/dashboard.html``.
@@ -23,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -32,7 +38,8 @@ from typing import Annotated, Any
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,9 +51,11 @@ from drdoom.observability import configure_logging, incident_context
 
 logger = logging.getLogger(__name__)
 
-WINDOW_LENGTH = 60
+# An upper bound checked before the service-specific shape, so an oversized body is
+# refused without being turned into an array. A day of four metrics is 5760 cells.
+MAX_CELLS = 10_000
+MAX_SYMPTOMS = 2_000
 TERMINAL = {"complete", "rejected"}
-_FEATURES = ("latency_ms", "error_rate_pct", "cpu_pct", "queue_depth")
 
 
 # --- request and response shapes ---------------------------------------------------
@@ -58,8 +67,13 @@ class MetricWindow(BaseModel):
     values: list[list[float]] = Field(
         description="One row per timestep, one column per metric",
     )
-    feature_names: list[str] | None = None
-    symptoms: str = Field(default="", description="What the reporter observed")
+    feature_names: list[str] | None = Field(
+        default=None,
+        description="Metric names in column order; if given, must match the service's order",
+    )
+    symptoms: str = Field(
+        default="", max_length=MAX_SYMPTOMS, description="What the reporter observed"
+    )
 
     @field_validator("values")
     @classmethod
@@ -69,8 +83,18 @@ class MetricWindow(BaseModel):
         widths = {len(row) for row in values}
         if len(widths) != 1:
             raise ValueError("every row must have the same number of metrics")
-        if not widths.pop():
+        width = widths.pop()
+        if not width:
             raise ValueError("a window needs at least one metric")
+        if len(values) * width > MAX_CELLS:
+            raise ValueError(f"a window may hold at most {MAX_CELLS} values")
+        for row_number, row in enumerate(values):
+            for column, value in enumerate(row):
+                if not math.isfinite(value):
+                    raise ValueError(
+                        f"values must be finite; got {value} at timestep {row_number}, "
+                        f"column {column}"
+                    )
         return values
 
 
@@ -160,8 +184,25 @@ CurrentService = Annotated[Service, Depends(get_service)]
 Approver = Annotated[Principal, Depends(require_principal)]
 
 
-def _window(payload: MetricWindow) -> np.ndarray:
-    return np.asarray(payload.values, dtype=np.float32)
+def _window(payload: MetricWindow, current: Service) -> np.ndarray:
+    """The payload as an array the detector can score, or a 422 saying why not.
+
+    Checked here, before the graph starts, so that a streaming request fails with a status
+    code rather than an error event halfway through a response that already said 200.
+    """
+    triage = current.investigator.triage
+    if payload.feature_names is not None and list(payload.feature_names) != triage.feature_names:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"feature_names must be {triage.feature_names} in that order, "
+            f"got {list(payload.feature_names)}",
+        )
+    window = np.asarray(payload.values, dtype=np.float32)
+    try:
+        triage.check(window)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
+    return window
 
 
 def _sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
@@ -218,9 +259,10 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     def investigate(payload: MetricWindow, current: CurrentService) -> InvestigationView:
         """Start an investigation and return where it stopped."""
         current.count("investigate")
+        window = _window(payload, current)
         incident_id = uuid.uuid4().hex[:12]
         outcome = current.investigator.start(
-            _window(payload), payload.symptoms, incident_id, payload.feature_names
+            window, payload.symptoms, incident_id, payload.feature_names
         )
         logger.info("incident %s finished in state %s", incident_id, outcome.status)
         return InvestigationView.of(outcome)
@@ -229,12 +271,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     def investigate_stream(payload: MetricWindow, current: CurrentService) -> StreamingResponse:
         """The same run, delivered a stage at a time."""
         current.count("investigate_stream")
+        window = _window(payload, current)
         incident_id = uuid.uuid4().hex[:12]
 
         def events() -> Iterator[dict[str, Any]]:
             yield {"event": "accepted", "data": {"incident_id": incident_id}}
             yield from current.investigator.stream_start(
-                _window(payload), payload.symptoms, incident_id, payload.feature_names
+                window, payload.symptoms, incident_id, payload.feature_names
             )
 
         return StreamingResponse(
@@ -245,13 +288,18 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     @app.get("/demo/window")
     def demo_window(anomalous: bool = True) -> dict[str, Any]:
-        """A window shaped like the detector expects, so the dashboard has input."""
+        """A window shaped like the detector expects, so the dashboard has input.
+
+        The names come from the generator that made the values, so they always describe
+        this window. A service configured for other metrics refuses it with a 422.
+        """
         from drdoom.api.factory import demo_window as make_window
+        from drdoom.data.synthetic import FEATURE_NAMES
 
         window = make_window(anomalous=anomalous)
         return {
             "values": window.tolist(),
-            "feature_names": list(_FEATURES),
+            "feature_names": list(FEATURE_NAMES),
             "symptoms": (
                 "latency and queue depth climbing over the last half hour"
                 if anomalous
@@ -313,6 +361,22 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     dashboard = get_settings().project_root / "web"
     if dashboard.is_dir():
         app.mount("/", StaticFiles(directory=dashboard, html=True), name="dashboard")
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:
+        """Say where a request is wrong and why, without echoing what was sent.
+
+        The default handler returns the rejected input. For a window that is up to ten
+        thousand numbers sent straight back, and when the input held NaN it cannot be
+        serialised at all: the refusal itself failed with a 500.
+        """
+        detail = [
+            {"loc": list(item["loc"]), "msg": item["msg"], "type": item["type"]}
+            for item in error.errors()
+        ]
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={"detail": detail}
+        )
 
     @app.exception_handler(ValueError)
     async def value_error(request: Request, error: ValueError):  # pragma: no cover
