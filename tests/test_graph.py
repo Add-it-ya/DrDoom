@@ -461,3 +461,22 @@ def test_a_plan_written_without_a_model_is_flagged_as_degraded(tmp_path) -> None
 
     assert suspended.state["degraded"] is True
     assert suspended.state["model"] == "stub-1"
+
+
+def test_a_model_that_never_answers_usably_still_reaches_the_gate(tmp_path) -> None:
+    """Two malformed answers used to end the run with nothing recorded but a stack trace."""
+    unusable = StubProvider(default="I would rather not")
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=tmp_path / "audit.jsonl")
+        for agent in (investigator.diagnosis, investigator.remediation, investigator.reporting):
+            agent.provider = unusable
+
+        suspended = investigator.start(disturbed_window(), "latency climbing", "incident")
+        outcome = investigator.resume("incident", approved=True, principal="aditya")
+
+    assert suspended.status == "awaiting_approval"
+    assert suspended.state["degraded"] is True
+    assert suspended.state["plan"]["risk_level"] == "high"
+    assert outcome.status == "complete"
+    assert outcome.executed is False
+    assert outcome.tokens > 0

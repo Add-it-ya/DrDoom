@@ -116,4 +116,5 @@ def generate_structured(
         f"{last_error}",
         raw=last_raw,
         attempts=max_repairs + 1,
+        completions=completions,
     )

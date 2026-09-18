@@ -26,7 +26,7 @@ from pathlib import Path
 from drdoom.agents.diagnosis import DiagnosisAgent, format_passages
 from drdoom.config import get_settings
 from drdoom.evals.groundedness import score_text
-from drdoom.llm.base import LLMProvider, LLMUnavailableError
+from drdoom.llm.base import LLMProvider
 from drdoom.llm.recording import RecordingProvider, ReplayProvider, SnapshotStore
 from drdoom.rag import corpus
 from drdoom.rag.evaluate import evaluate as evaluate_retrieval
@@ -108,14 +108,14 @@ def build_retriever() -> Retriever:
 
 def run_case(agent: DiagnosisAgent, case: dict) -> CaseResult:
     """Diagnose one scenario and score what came back against what was retrieved."""
-    try:
-        outcome = agent.run(case["symptoms"], case.get("root_cause"))
-        parsed = True
-    except LLMUnavailableError:
-        raise
-    except ValueError:
-        logger.exception("case %s produced an unusable diagnosis", case["id"])
-        return CaseResult(case["id"], False, 0.0, 0.0, False, False, False, 0)
+    outcome = agent.run(case["symptoms"], case.get("root_cause"))
+    if outcome.failure == "invalid_output":
+        # The agent degrades rather than raising, so the suite has to ask why. An answer
+        # that never fitted the schema is a parse failure, and scoring the placeholder
+        # written in its place would hide one.
+        logger.warning("case %s produced an unusable diagnosis", case["id"])
+        return CaseResult(case["id"], False, 0.0, 0.0, False, False, True, outcome.tokens)
+    parsed = True
 
     hits = agent.retrieve(case["symptoms"] + " " + (case.get("root_cause") or ""))
     context = format_passages(hits)

@@ -8,10 +8,10 @@ model. See ``RemediationPlan.requires_approval``.
 Nothing in this module executes anything. Proposing and doing are separated so that the
 approval gate has something real to stand between.
 
-When the provider is unreachable the agent degrades rather than failing the whole
-investigation, and the plan it falls back to is built to be harmless: it proposes
-nothing, it is rated high risk so a human still has to see it, and its action matches
-nothing the executor knows how to run.
+When the provider is unreachable, or its answer still fails the schema after one repair,
+the agent degrades rather than failing the whole investigation, and the plan it falls
+back to is built to be harmless: it proposes nothing, it is rated high risk so a human
+still has to see it, and its action matches nothing the executor knows how to run.
 """
 
 from __future__ import annotations
@@ -22,7 +22,17 @@ from dataclasses import dataclass, field
 from drdoom.agents.diagnosis import SHORTLIST_DEPTH, format_passages, to_citations
 from drdoom.agents.schemas import Citation, RemediationPlan
 from drdoom.executor import CATALOGUE
-from drdoom.llm.base import Completion, LLMProvider, LLMUnavailableError, Message
+from drdoom.llm.base import (
+    Completion,
+    Failure,
+    LLMInvalidOutputError,
+    LLMProvider,
+    LLMUnavailableError,
+    Message,
+    failure_clause,
+    failure_kind,
+    spent_on,
+)
 from drdoom.llm.structured import generate_structured
 from drdoom.rag.index import Hit, Retriever
 from drdoom.rag.rerank import NoReranker, Reranker
@@ -46,6 +56,7 @@ class RemediationResult:
     citations: list[Citation] = field(default_factory=list)
     degraded: bool = False
     completions: list[Completion] = field(default_factory=list)
+    failure: Failure | None = None
 
     @property
     def tokens(self) -> int:
@@ -94,16 +105,20 @@ class RemediationAgent:
                 system=SYSTEM,
                 max_tokens=800,
             )
-        except LLMUnavailableError as error:
-            logger.warning("provider unavailable, holding an empty plan for a human: %s", error)
+        except (LLMUnavailableError, LLMInvalidOutputError) as error:
+            logger.warning("no usable plan, holding an empty one for a human: %s", error)
             return RemediationResult(
-                plan=self._degraded(hits), citations=to_citations(hits), degraded=True
+                plan=self._degraded(hits, failure_clause(error)),
+                citations=to_citations(hits),
+                degraded=True,
+                completions=spent_on(error),
+                failure=failure_kind(error),
             )
 
         logger.info("plan rated %s, approval required: %s", plan.risk_level, plan.requires_approval)
         return RemediationResult(plan=plan, citations=to_citations(hits), completions=completions)
 
-    def _degraded(self, hits: list[Hit]) -> RemediationPlan:
+    def _degraded(self, hits: list[Hit], reason: str) -> RemediationPlan:
         """A plan that proposes nothing, rated so that a human has to look at it.
 
         Its risk is unknown, and unknown is treated as high rather than low: the costly
@@ -112,7 +127,7 @@ class RemediationAgent:
         """
         leading = hits[0].chunk.citation if hits else "no matching documentation"
         return RemediationPlan(
-            immediate_action="None proposed: no model was available to write a plan",
+            immediate_action=f"None proposed: {reason}, so no plan was written",
             risk_level="high",
             short_term_fix=f"Work from the most relevant documentation retrieved: {leading}.",
             long_term_fix="Decide the fix manually once the cause is confirmed.",

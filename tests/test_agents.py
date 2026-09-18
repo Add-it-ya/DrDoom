@@ -303,11 +303,47 @@ def test_the_degraded_diagnosis_does_not_pretend_to_diagnose() -> None:
     assert "has not been summarised" in summary
 
 
-def test_a_persistently_malformed_diagnosis_raises() -> None:
+def test_a_persistently_malformed_diagnosis_degrades_instead_of_raising() -> None:
+    """Two unusable answers end in the same place as no answer: a stated placeholder."""
+    provider = StubProvider(default="I would rather not")
+    agent = DiagnosisAgent(corpus_retriever(), provider)
+
+    result = agent.run("memory limit container", "memory_leak")
+
+    assert len(provider.calls) == 2
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert result.citations
+    assert result.diagnosis.confidence == "low"
+    assert "could not be used" in result.diagnosis.summary
+
+
+def test_the_unusable_answers_are_still_billed() -> None:
     agent = DiagnosisAgent(corpus_retriever(), StubProvider(default="I would rather not"))
 
-    with pytest.raises(LLMInvalidOutputError):
-        agent.run("memory limit container", "memory_leak")
+    result = agent.run("memory limit container", "memory_leak")
+
+    assert len(result.completions) == 2
+    assert result.tokens > 0
+
+
+def test_an_unreachable_provider_is_told_apart_from_an_unusable_answer() -> None:
+    agent = DiagnosisAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert agent.run("memory limit container").failure == "unavailable"
+
+
+def test_the_structured_layer_still_raises_for_callers_that_want_to_know() -> None:
+    """Degrading is the agents' choice; the error itself still carries what it cost."""
+    from drdoom.llm.base import user
+    from drdoom.llm.structured import generate_structured
+
+    with pytest.raises(LLMInvalidOutputError) as caught:
+        generate_structured(StubProvider(default="nope"), [user("q")], Diagnosis)
+
+    assert len(caught.value.completions) == 2
 
 
 def test_query_combines_symptoms_and_predicted_cause() -> None:
@@ -421,6 +457,21 @@ def test_a_plan_written_without_a_model_proposes_nothing_executable() -> None:
     assert agent.run("summary", "memory_leak").plan.action is None
 
 
+def test_a_persistently_malformed_plan_is_held_for_a_human() -> None:
+    """An answer that never fitted the schema is an unassessed plan, treated as high risk."""
+    agent = RemediationAgent(corpus_retriever(), StubProvider(default="restart everything"))
+
+    result = agent.run("summary", "memory_leak")
+
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert result.plan.risk_level == "high"
+    assert result.plan.requires_approval is True
+    assert result.plan.action is None
+    assert "could not be used" in result.plan.immediate_action
+    assert len(result.completions) == 2
+
+
 # --- reporting ---------------------------------------------------------------------
 
 
@@ -462,6 +513,18 @@ def test_reporting_degrades_to_the_recorded_facts() -> None:
     assert result.degraded is True
     assert "Decision: rejected_by_human" in result.postmortem.action_taken
     assert "Executed: nothing" in result.postmortem.action_taken
+
+
+def test_a_persistently_malformed_postmortem_falls_back_to_the_recorded_facts() -> None:
+    agent = ReportingAgent(StubProvider(default="it went fine"))
+
+    result = agent.run(diagnosis_fixture(), plan_fixture(), "approved_by_human", "restart")
+
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert "could not be used" in result.postmortem.summary
+    assert "Decision: approved_by_human" in result.postmortem.action_taken
+    assert len(result.completions) == 2
 
 
 def test_postmortem_markdown_has_every_section() -> None:
