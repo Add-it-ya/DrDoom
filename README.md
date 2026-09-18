@@ -142,7 +142,9 @@ decide what counts as risky.
 goes back to the model with the validation error attached, once. Not a loop: a model that
 cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
 repair turns a bad response into a bill. If the provider is unreachable the agents degrade
-to the retrieved documentation and say so, rather than inventing a summary.
+to the retrieved documentation and say so, rather than inventing a summary. A plan written
+without a model proposes nothing, is rated high risk so it still stops at the gate, and
+matches nothing the executor can run, so approving it changes nothing.
 
 ### Orchestration
 
@@ -179,6 +181,10 @@ DRDOOM_API_KEYS="aditya:choose-a-key" uv run uvicorn drdoom.api.main:app
 delivers the same run a stage at a time over server-sent events, so the dashboard fills in
 progressively instead of blocking on one long request.
 `POST /incidents/{id}/approve` resumes a suspended one.
+
+The service retrieves with BM25 and the MiniLM encoder fused, the configuration the
+evaluation suite scores. The first start embeds the document corpus, which takes a few
+minutes on a CPU; the matrix is saved beside the corpus and every later start reuses it.
 
 **Approving requires a credential**; reading does not. The key maps to a named principal,
 because the audit log has to record *who* decided and "someone with a valid key" is not an
@@ -269,12 +275,13 @@ The seam to swap in a real tracer is one function.
 DRDOOM_API_KEYS="you:pick-a-key" GROQ_API_KEY=... docker compose up
 ```
 
-Two stages: the builder installs dependencies and bakes in the document corpus and the
-embedding model, so a cold container answers immediately rather than downloading half a
-gigabyte while someone waits. Torch comes from the CPU-only index — the default wheels
-carry CUDA libraries worth several gigabytes and nothing here uses a GPU. Runs as a
-non-root user, health-checks the application rather than the port, and keeps `state/` on a
-volume so suspended investigations survive a restart.
+Two stages: the builder installs dependencies and bakes in the document corpus, the
+embedding model and the corpus embeddings, so a cold container answers immediately rather
+than downloading half a gigabyte and embedding thousands of passages while someone waits.
+Torch comes from the CPU-only index — the default wheels carry CUDA libraries worth several
+gigabytes and nothing here uses a GPU. Runs as a non-root user, health-checks the
+application rather than the port, and keeps `state/` on a volume so suspended
+investigations survive a restart.
 
 ### Security
 
