@@ -23,6 +23,7 @@ from drdoom.data import synthetic
 from drdoom.data.windows import Scaler, build_index
 from drdoom.detect.base import Detector
 from drdoom.detect.baselines import WindowSpread
+from drdoom.detect.evaluate import select_threshold
 from drdoom.executor import DryRunExecutor
 from drdoom.llm.base import LLMProvider
 from drdoom.llm.factory import build_provider
@@ -32,21 +33,30 @@ from drdoom.rag.ingest import chunk_all
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_THRESHOLD = 2.5
 WINDOW = 60
 
 
 def build_detector() -> tuple[Detector, float, list[str]]:
-    """A baseline fitted on generated normal traffic.
+    """A baseline fitted on generated normal traffic, with a threshold that is measured.
 
     Measurement on the real dataset favoured a window statistic over the autoencoder, so
     the default here is that statistic rather than the more impressive option.
+
+    The threshold is chosen the way every published result chooses one: on separately
+    generated validation traffic, as the most sensitive value that stays inside the false
+    alarm budget. A number typed in by hand is expressed in the units of one particular
+    scaler, and quietly stops meaning anything when that scaler changes.
     """
     series = synthetic.generate(n_scenarios=6, days=2, seed=7)
     normal = build_index(series, WINDOW, stride=20).normal_only()
     detector = WindowSpread()
     detector.fit(series, normal, Scaler.fit(series))
-    return detector, DEFAULT_THRESHOLD, list(synthetic.FEATURE_NAMES)
+
+    validation = synthetic.generate(n_scenarios=6, days=2, seed=8)
+    index = build_index(validation, WINDOW)
+    threshold = select_threshold(detector.score(validation, index), index, validation)
+    logger.info("detector threshold %.4f chosen against the false alarm budget", threshold)
+    return detector, threshold, list(synthetic.FEATURE_NAMES)
 
 
 def build_classifier() -> Classifier | None:
