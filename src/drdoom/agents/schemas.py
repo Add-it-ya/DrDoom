@@ -12,6 +12,10 @@ deserialisation from disk.
 Everything else is ordinary validation, which exists because syntactically valid JSON is
 not a usable plan. A risk level has three possible values, not any sentence the model
 feels like writing.
+
+The same goes for what a plan would run. ``immediate_action`` is prose for the human;
+``action`` is the one field the executor reads, and it can only name a catalogue entry or
+nothing. Reading prose for keywords would turn "never roll back" into a rollback.
 """
 
 from __future__ import annotations
@@ -22,6 +26,10 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 RiskLevel = Literal["low", "medium", "high"]
 Confidence = Literal["low", "medium", "high"]
+# Kept in step with drdoom.executor.CATALOGUE; a test fails if the two drift apart.
+ActionKind = Literal[
+    "rollout_restart", "rollout_undo", "scale_out", "set_memory_limit", "cordon_node"
+]
 
 APPROVAL_REQUIRED_AT: frozenset[str] = frozenset({"medium", "high"})
 
@@ -59,6 +67,10 @@ class RemediationPlan(BaseModel):
     short_term_fix: str = Field(description="What stabilises the service today")
     long_term_fix: str = Field(description="What stops it recurring")
     rollback: str = Field(description="How to undo the immediate action if it makes things worse")
+    action: ActionKind | None = Field(
+        default=None,
+        description="The catalogue action that carries out immediate_action, or null if none does",
+    )
 
     @computed_field
     @property

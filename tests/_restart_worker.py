@@ -43,6 +43,7 @@ PLAN = json.dumps(
         "short_term_fix": "Set a memory limit",
         "long_term_fix": "Fix the cache eviction policy",
         "rollback": "Scale the previous replica set back up",
+        "action": "rollout_restart",
     }
 )
 POSTMORTEM = json.dumps(

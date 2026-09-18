@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from drdoom.agents.diagnosis import SHORTLIST_DEPTH, format_passages, to_citations
 from drdoom.agents.schemas import Citation, RemediationPlan
+from drdoom.executor import CATALOGUE
 from drdoom.llm.base import Completion, LLMProvider, LLMUnavailableError, Message
 from drdoom.llm.structured import generate_structured
 from drdoom.rag.index import Hit, Retriever
@@ -36,6 +37,7 @@ SYSTEM = (
 )
 
 CONTEXT_PASSAGES = 4
+ACTION_MENU = "\n".join(f"- {spec.kind}: {spec.description}" for spec in CATALOGUE)
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,10 @@ class RemediationAgent:
             f"Detected cause: {root_cause or 'not determined'}\n\n"
             f"Documentation excerpts:\n{format_passages(hits)}\n\n"
             "Return a remediation plan as JSON with keys immediate_action, risk_level "
-            "(low, medium or high), short_term_fix, long_term_fix and rollback."
+            "(low, medium or high), short_term_fix, long_term_fix, rollback and action.\n\n"
+            "action is what would actually run once a human approves. It must be exactly one "
+            "of these, and only if it is the step immediate_action describes; otherwise null:\n"
+            f"{ACTION_MENU}"
         )
 
         try:

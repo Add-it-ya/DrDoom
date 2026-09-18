@@ -15,7 +15,7 @@ from drdoom.agents.schemas import Diagnosis, Postmortem, RemediationPlan
 from drdoom.agents.triage import TriageAgent, TriageResult, window_to_series
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
-from drdoom.executor import match_action
+from drdoom.executor import CATALOGUE
 from drdoom.llm.base import LLMInvalidOutputError, LLMUnavailableError
 from drdoom.llm.stub import SequenceProvider, StubProvider
 from drdoom.rag.corpus import Document
@@ -376,6 +376,34 @@ def test_remediation_degrades_instead_of_failing_when_the_provider_is_down() -> 
     assert result.completions == []
 
 
+def test_the_model_is_offered_every_catalogue_action() -> None:
+    provider = StubProvider(default=PLAN_JSON)
+    RemediationAgent(corpus_retriever(), provider).run("summary", "memory_leak")
+
+    prompt = provider.calls[0][-1].content
+    for spec in CATALOGUE:
+        assert spec.kind in prompt
+
+
+def test_the_action_the_model_names_is_kept() -> None:
+    plan_json = json.dumps(json.loads(PLAN_JSON) | {"action": "rollout_restart"})
+
+    plan = RemediationAgent(corpus_retriever(), StubProvider(default=plan_json)).run("s").plan
+
+    assert plan.action == "rollout_restart"
+
+
+def test_an_invented_action_is_repaired_or_refused() -> None:
+    """An action outside the catalogue fails validation like an invented risk level."""
+    invented = json.dumps(json.loads(PLAN_JSON) | {"action": "drop_database"})
+    provider = SequenceProvider([invented, PLAN_JSON])
+
+    plan = RemediationAgent(corpus_retriever(), provider).run("summary").plan
+
+    assert len(provider.calls) == 2
+    assert plan.action is None
+
+
 def test_a_plan_written_without_a_model_still_needs_a_human() -> None:
     """Its risk is unknown, and an unknown risk is never treated as safe."""
     agent = RemediationAgent(
@@ -390,7 +418,7 @@ def test_a_plan_written_without_a_model_proposes_nothing_executable() -> None:
         corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
     )
 
-    assert match_action(agent.run("summary", "memory_leak").plan.immediate_action) is None
+    assert agent.run("summary", "memory_leak").plan.action is None
 
 
 # --- reporting ---------------------------------------------------------------------

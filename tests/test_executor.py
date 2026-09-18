@@ -5,28 +5,35 @@ the log can tell you if it has been edited since.
 """
 
 import json
+from typing import get_args
 
 import pytest
+from pydantic import ValidationError
 
-from drdoom.agents.schemas import RemediationPlan
+from drdoom.agents.schemas import ActionKind, RemediationPlan
 from drdoom.audit import GENESIS, AuditLog, compute_entry_hash
 from drdoom.executor import (
     CATALOGUE,
     ApprovalToken,
     DryRunExecutor,
     NotApprovedError,
-    match_action,
+    action_spec,
     plan_hash,
 )
 
 
-def make_plan(action: str = "Rolling restart of the affected pods", risk: str = "high"):
+def make_plan(
+    text: str = "Rolling restart of the affected pods",
+    risk: str = "high",
+    action: str | None = "rollout_restart",
+):
     return RemediationPlan(
-        immediate_action=action,
+        immediate_action=text,
         risk_level=risk,
         short_term_fix="Set a memory limit",
         long_term_fix="Fix the cache eviction policy",
         rollback="Scale the previous replica set back up",
+        action=action,
     )
 
 
@@ -54,7 +61,7 @@ def test_an_approved_plan_renders_its_command() -> None:
 def test_a_token_for_a_different_plan_is_refused() -> None:
     """Approving a restart must not authorise deleting a volume."""
     approved = make_plan()
-    substituted = make_plan(action="Delete the persistent volume claim")
+    substituted = make_plan(text="Delete the persistent volume claim")
     token = ApprovalToken.issue(approved, "aditya")
 
     with pytest.raises(NotApprovedError, match="does not match this plan"):
@@ -76,8 +83,8 @@ def test_a_token_authorises_the_plan_it_was_issued_for() -> None:
     assert ApprovalToken.issue(plan, "aditya").authorises(plan) is True
 
 
-def test_an_unrecognised_action_is_refused_rather_than_guessed() -> None:
-    plan = make_plan(action="Politely ask the database to behave")
+def test_a_plan_that_names_no_action_is_refused_rather_than_guessed() -> None:
+    plan = make_plan(text="Politely ask the database to behave", action=None)
 
     result = DryRunExecutor().execute(plan, ApprovalToken.issue(plan, "aditya"))
 
@@ -85,21 +92,65 @@ def test_an_unrecognised_action_is_refused_rather_than_guessed() -> None:
     assert result.kind == "unrecognised"
 
 
-@pytest.mark.parametrize(
-    ("action", "kind"),
-    [
-        ("Perform a rolling restart of the pods", "rollout_restart"),
-        ("Roll back to the previous version", "rollout_undo"),
-        ("Scale up the deployment to absorb the load", "scale_out"),
-        ("Apply a memory limit to the container", "set_memory_limit"),
-        ("Drain the node before maintenance", "cordon_node"),
-    ],
-)
-def test_known_actions_are_recognised(action: str, kind: str) -> None:
-    spec = match_action(action)
+def test_prose_that_describes_an_action_does_not_run_it() -> None:
+    """The sentence is for the human. Only the structured field reaches the executor."""
+    plan = make_plan(text="Perform a rolling restart of the pods", action=None)
 
-    assert spec is not None
-    assert spec.kind == kind
+    result = DryRunExecutor().execute(plan, ApprovalToken.issue(plan, "aditya"))
+
+    assert result.executed is False
+
+
+def test_a_negated_sentence_is_never_read_as_the_action_it_negates() -> None:
+    """A keyword search once read "never roll back" as a rollback."""
+    plan = make_plan(text="Never roll back; a restart is safer", action="rollout_restart")
+
+    result = DryRunExecutor(target="api").execute(plan, ApprovalToken.issue(plan, "aditya"))
+
+    assert result.kind == "rollout_restart"
+    assert result.command == "kubectl rollout restart deployment/api"
+
+
+@pytest.mark.parametrize("spec", CATALOGUE, ids=lambda spec: spec.kind)
+def test_every_catalogue_action_runs_when_named(spec) -> None:
+    plan = make_plan(action=spec.kind)
+
+    result = DryRunExecutor(target="api").execute(plan, ApprovalToken.issue(plan, "aditya"))
+
+    assert result.executed is True
+    assert result.kind == spec.kind
+    assert result.command == spec.template.format(target="api")
+
+
+def test_the_schema_offers_exactly_the_catalogue() -> None:
+    assert set(get_args(ActionKind)) == {spec.kind for spec in CATALOGUE}
+
+
+def test_an_invented_action_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        make_plan(action="delete_the_database")
+
+
+def test_changing_the_action_invalidates_the_approval() -> None:
+    """Approving a restart must not authorise a rollback, even with the same wording."""
+    approved = make_plan(action="rollout_restart")
+    token = ApprovalToken.issue(approved, "aditya")
+
+    with pytest.raises(NotApprovedError):
+        DryRunExecutor().execute(make_plan(action="rollout_undo"), token)
+
+
+def test_the_gate_preview_is_what_execution_renders() -> None:
+    executor = DryRunExecutor(target="api")
+    plan = make_plan(action="scale_out")
+
+    assert executor.preview(plan) == executor.execute(plan, ApprovalToken.issue(plan, "a")).command
+    assert executor.preview(make_plan(action=None)) is None
+
+
+def test_no_action_names_no_catalogue_entry() -> None:
+    assert action_spec(None) is None
+    assert action_spec("") is None
 
 
 def test_every_catalogue_entry_renders_a_command() -> None:

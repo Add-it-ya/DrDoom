@@ -207,6 +207,8 @@ class Investigator:
             {
                 "question": "Approve this remediation?",
                 "immediate_action": plan.immediate_action,
+                "action": plan.action,
+                "would_run": self.executor.preview(plan),
                 "risk_level": plan.risk_level,
                 "rollback": plan.rollback,
                 "plan_hash": plan_hash(plan),

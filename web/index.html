@@ -238,6 +238,7 @@ function showPlan(data) {
   const p = data.plan || {};
   fill("remediate", details([
     ["Immediate action", p.immediate_action],
+    ["Catalogue action", p.action || "none (approving runs nothing)"],
     ["Risk", p.risk_level, p.risk_level],
     ["Needs approval", p.requires_approval ? "yes" : "no"],
     ["Short-term fix", p.short_term_fix],
@@ -261,6 +262,7 @@ function showGate(pending) {
   const body = $("gateBody");
   body.replaceChildren(details([
     ["Action", pending.immediate_action],
+    ["Will run", pending.would_run || "nothing (the plan names no catalogue action)"],
     ["Risk", pending.risk_level, pending.risk_level],
     ["Rollback", pending.rollback],
   ]));

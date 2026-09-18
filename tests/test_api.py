@@ -248,6 +248,14 @@ def test_a_bad_stream_request_fails_with_a_status_not_halfway_through(client) ->
         assert stream.status_code == 422
 
 
+def test_the_gate_shows_the_command_approval_would_run(client) -> None:
+    """A human approves a command, not a sentence."""
+    awaiting = client.post("/investigate", json=window_payload()).json()["awaiting"]
+
+    assert awaiting["action"] == "rollout_restart"
+    assert awaiting["would_run"].startswith("kubectl rollout restart deployment/")
+
+
 # --- authentication ----------------------------------------------------------------
 
 
