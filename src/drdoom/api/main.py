@@ -22,7 +22,7 @@ model call, and never reaches the approval gate as a phantom incident.
 
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
-a sanitiser. See the note in ``web/dashboard.html``.
+a sanitiser. See the note in ``web/index.html``.
 
 **Health describes the parts, not the process.** ``/health`` says whether a model is
 configured, whether anyone can approve, and whether the investigation store answers. A

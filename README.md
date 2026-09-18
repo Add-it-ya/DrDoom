@@ -4,8 +4,9 @@ Autonomous incident response for production services: detect an anomaly, diagnos
 root cause against real operational documentation, propose a remediation, hold it at a
 human approval gate, and write the postmortem.
 
-> ⚠️ **Early development.** The foundations are in place; the detection, retrieval and
-> agent layers are being built. Results tables below are filled in as each lands.
+> **Status.** Every layer in the table below is built and tested. The running service
+> scores windows posted to it in the synthetic four-metric schema; it does not yet read
+> from a live metrics source.
 
 ## Why this exists
 
@@ -141,10 +142,13 @@ decide what counts as risky.
 **Every structured response is validated, and one repair is allowed.** A malformed plan
 goes back to the model with the validation error attached, once. Not a loop: a model that
 cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
-repair turns a bad response into a bill. If the provider is unreachable the agents degrade
-to the retrieved documentation and say so, rather than inventing a summary. A plan written
-without a model proposes nothing, is rated high risk so it still stops at the gate, and
-names no action the executor can run, so approving it changes nothing.
+repair turns a bad response into a bill. If the provider is unreachable, or its answer
+still fails after the repair, the agents degrade to the retrieved documentation and say
+which of the two happened, rather than inventing a summary. A plan written without a
+usable answer proposes nothing, is rated high risk so it still stops at the gate, and
+names no action the executor can run, so approving it changes nothing. Without a provider
+key the service still starts in that degraded form, and `/health` says so. A run that
+stops at an error is reported as `failed`, never as `no_incident`.
 
 **What runs is a field, not a sentence.** `immediate_action` is prose for the human. The
 executor reads only `action`, which can name one of five catalogue entries or nothing, and
@@ -202,7 +206,8 @@ answer a review accepts. An unset key ring accepts nobody — a deployment that 
 configure credentials refuses approvals rather than accepting them from anyone.
 
 **Approving twice is safe.** Networks retry, so a recorded decision is returned as it
-stands rather than applied a second time. A later reversal is refused.
+stands rather than applied a second time. A later request with the opposite answer
+changes nothing: the recorded decision is returned as it stands.
 
 **No model output reaches the DOM as markup.** Plain fields go through `textContent`; the
 postmortem is markdown, so it goes through DOMPurify. That chain matters here more than

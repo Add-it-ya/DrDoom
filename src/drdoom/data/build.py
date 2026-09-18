@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from drdoom.config import get_settings
-from drdoom.data import smd, store, synthetic, windows
+from drdoom.data import card, smd, store, synthetic, windows
 from drdoom.data.schema import MetricSeries
 from drdoom.data.splits import SplitResult, held_out_series_split, slice_series, time_based_split
 
@@ -207,6 +207,11 @@ def main(argv: list[str] | None = None) -> None:
             manifest = build(config)
             counts = {name: split["events"] for name, split in manifest["splits"].items()}
             logger.info("%s/%s events per split: %s", source, strategy, counts)
+
+    # Rendered from every manifest on disk, so building one source keeps the others' rows.
+    page = card.write_page()
+    if page is not None:
+        logger.info("wrote %s", page)
 
 
 if __name__ == "__main__":

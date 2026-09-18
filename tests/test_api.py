@@ -355,7 +355,7 @@ def test_a_repeat_does_not_execute_a_second_time(client) -> None:
     assert len(client.get(f"/incidents/{incident}/audit").json()["entries"]) == 1
 
 
-def test_a_reversal_after_the_fact_is_refused(client) -> None:
+def test_a_reversal_after_the_fact_returns_the_recorded_decision(client) -> None:
     incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
     headers = {"X-API-Key": KEY}
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
