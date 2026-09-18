@@ -144,7 +144,17 @@ cannot satisfy a schema on the second attempt rarely does on the fifth, and an u
 repair turns a bad response into a bill. If the provider is unreachable the agents degrade
 to the retrieved documentation and say so, rather than inventing a summary. A plan written
 without a model proposes nothing, is rated high risk so it still stops at the gate, and
-matches nothing the executor can run, so approving it changes nothing.
+names no action the executor can run, so approving it changes nothing.
+
+**What runs is a field, not a sentence.** `immediate_action` is prose for the human. The
+executor reads only `action`, which can name one of five catalogue entries or nothing, and
+the approval gate shows the exact command it would render. The prose is never searched for
+keywords: a substring match once read "never roll back" as a rollback.
+
+**A window is checked before anything is spent on it.** Missing or infinite values, a
+length or metric order the threshold was not calibrated for, and oversized bodies are
+refused with 422 before the graph starts. Unchecked, a single NaN compared false against the
+threshold and was reported as an incident.
 
 ### Orchestration
 
