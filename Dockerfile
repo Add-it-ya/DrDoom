@@ -1,8 +1,9 @@
 # Two stages, because the things needed to build this image are much larger than the
-# things needed to run it. The builder installs dependencies and bakes in the two assets
-# that would otherwise be fetched on first request -- the document corpus and the
-# embedding model -- so a cold container answers immediately instead of downloading half
-# a gigabyte while someone waits.
+# things needed to run it. The builder installs dependencies and bakes in the three assets
+# that would otherwise be produced on first request -- the document corpus, the embedding
+# model, and the corpus embedded by that model -- so a cold container answers immediately
+# instead of downloading half a gigabyte and embedding thousands of passages while
+# someone waits.
 #
 # Torch comes from the CPU-only index. The default wheel carries CUDA libraries worth
 # several gigabytes, and nothing here trains on a GPU.
@@ -36,6 +37,11 @@ ENV HF_HOME=/build/.cache/huggingface
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
 SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+
+# Embed the corpus once, here. On a CPU it takes minutes, and a container that did it on
+# every start would not answer for that long. The matrix is saved beside the corpus,
+# which the runtime stage already copies.
+RUN python -c "from drdoom.api.factory import build_retriever; build_retriever()"
 
 
 FROM python:3.12-slim-bookworm AS runtime

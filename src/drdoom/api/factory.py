@@ -71,7 +71,16 @@ def build_classifier() -> Classifier | None:
         return None
 
 
-def build_retriever(use_dense: bool = False) -> Retriever:
+def build_retriever(use_dense: bool = True) -> Retriever:
+    """The retriever the service runs: BM25 and a learned encoder, fused.
+
+    Fusion is the configuration the retrieval results measured as better than BM25 alone,
+    and the one the evaluation suite scores, so it is also the one that serves requests.
+    ``use_dense=False`` leaves the encoder out, for anywhere its weights cannot be loaded.
+
+    Embedding the corpus takes minutes on a CPU, so the matrix is saved beside the corpus
+    the first time and reused on every start after that.
+    """
     if not corpus.is_downloaded():
         raise RuntimeError(
             "the document corpus is missing; run: python -c "
@@ -82,12 +91,18 @@ def build_retriever(use_dense: bool = False) -> Retriever:
     if not use_dense:
         return lexical
 
-    from drdoom.rag.embed import SentenceTransformerEmbedder
+    from drdoom.rag.embed import SentenceTransformerEmbedder, encode_cached
 
-    return HybridRetriever([lexical, DenseIndex(chunks, SentenceTransformerEmbedder())])
+    embedder = SentenceTransformerEmbedder()
+    matrix = encode_cached(
+        embedder,
+        [chunk.search_text for chunk in chunks],
+        corpus.corpus_dir() / f"embeddings-{embedder.name}.npz",
+    )
+    return HybridRetriever([lexical, DenseIndex(chunks, embedder, matrix=matrix)])
 
 
-def build_service(provider: LLMProvider | None = None, use_dense: bool = False):
+def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     """Wire the whole system together for a real run."""
     from drdoom.agents.graph import make_checkpointer
     from drdoom.api.main import Service
