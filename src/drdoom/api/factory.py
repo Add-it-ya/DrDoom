@@ -26,7 +26,7 @@ from drdoom.detect.baselines import WindowSpread
 from drdoom.detect.evaluate import select_threshold
 from drdoom.executor import DryRunExecutor
 from drdoom.llm.base import LLMProvider
-from drdoom.llm.factory import build_provider
+from drdoom.llm.factory import build_provider_or_unavailable
 from drdoom.rag import corpus
 from drdoom.rag.index import BM25Index, DenseIndex, HybridRetriever, Retriever
 from drdoom.rag.ingest import chunk_all
@@ -110,7 +110,7 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     settings = get_settings()
     detector, threshold, feature_names = build_detector()
     retriever = build_retriever(use_dense=use_dense)
-    model = provider or build_provider(settings.llm_provider)
+    model = provider or build_provider_or_unavailable(settings.llm_provider)
     audit = AuditLog()
 
     checkpointer, connection = make_checkpointer(checkpoint_path())

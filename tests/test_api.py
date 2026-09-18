@@ -114,7 +114,19 @@ def window_payload(anomalous: bool = True) -> dict:
 
 
 def test_health_needs_no_credential(client) -> None:
-    assert client.get("/health").json() == {"status": "ok"}
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_health_reports_each_part_it_rests_on(client) -> None:
+    components = client.get("/health").json()["components"]
+
+    assert {"model", "approvals", "store", "detector", "classifier", "retriever"} <= set(components)
+    assert components["model"]["ready"] is True
+    assert components["approvals"]["ready"] is True
+    assert components["store"]["ready"] is True
 
 
 def test_a_calm_window_returns_without_an_incident(client) -> None:
@@ -549,3 +561,97 @@ def test_a_stream_that_stops_ends_with_a_failed_event(broken) -> None:
     assert events[-2:] == ["failed", "done"]
     assert '"status": "failed"' in body
     assert "/secret/path" not in body
+
+
+# --- configuration --------------------------------------------------------------------
+
+
+def test_a_service_without_a_model_reports_degraded_but_stays_up(tmp_path) -> None:
+    from drdoom.llm.factory import UnavailableProvider
+
+    service = build_service(tmp_path)
+    missing = UnavailableProvider("no Groq credentials")
+    for agent in (
+        service.investigator.diagnosis,
+        service.investigator.remediation,
+        service.investigator.reporting,
+    ):
+        agent.provider = missing
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        health = local.get("/health")
+        body = local.post("/investigate", json=window_payload()).json()
+    set_service(None)
+
+    assert health.status_code == 200
+    assert health.json()["status"] == "degraded"
+    assert health.json()["components"]["model"]["ready"] is False
+    assert "Groq" not in health.text
+    assert body["status"] == "awaiting_approval"
+    assert body["degraded"] is True
+
+
+def test_no_one_able_to_approve_reports_degraded(tmp_path) -> None:
+    app = create_app(service=build_service(tmp_path), keyring=KeyRing({}))
+
+    with TestClient(app) as local:
+        body = local.get("/health").json()
+    set_service(None)
+
+    assert body["status"] == "degraded"
+    assert body["components"]["approvals"]["ready"] is False
+
+
+def test_a_store_that_does_not_answer_is_unavailable(tmp_path) -> None:
+    service = build_service(tmp_path)
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        service.connection.close()
+        response = local.get("/health")
+    set_service(None)
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "unavailable"
+
+
+def test_an_approval_key_written_in_the_local_env_file_is_accepted(tmp_path, monkeypatch) -> None:
+    """The key ring used to be built at import, before the .env was ever read."""
+    from drdoom.api import auth
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text("DRDOOM_API_KEYS=ops:from-the-file\n", encoding="utf-8")
+    monkeypatch.setattr("drdoom.config.PROJECT_ROOT", project)
+    monkeypatch.delenv(auth.KEYS_ENV, raising=False)
+
+    app = create_app(service=build_service(tmp_path))
+    try:
+        with TestClient(app) as local:
+            incident = local.post("/investigate", json=window_payload()).json()["incident_id"]
+            response = local.post(
+                f"/incidents/{incident}/approve",
+                json={"approved": True},
+                headers={"X-API-Key": "from-the-file"},
+            )
+    finally:
+        set_service(None)
+        auth.configure(KeyRing())
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "approved_by_human"
+
+
+def test_a_missing_provider_key_starts_a_degraded_service_not_a_crash(monkeypatch) -> None:
+    from drdoom.llm.base import LLMUnavailableError
+    from drdoom.llm.factory import UnavailableProvider, build_provider_or_unavailable
+
+    monkeypatch.setattr("drdoom.llm.factory.load_env_file", lambda: 0)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    provider = build_provider_or_unavailable("groq")
+
+    assert isinstance(provider, UnavailableProvider)
+    with pytest.raises(LLMUnavailableError):
+        provider.complete([])

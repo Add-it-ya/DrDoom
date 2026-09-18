@@ -9,7 +9,8 @@ and the two drifted.
 Three properties this layer is responsible for.
 
 **Approving requires authentication**, and the authenticated name is what the audit log
-records. Reading is open; deciding is not.
+records. Reading is open; deciding is not. The keys are read at startup, after the local
+.env has been loaded, so a key written there is one the service accepts.
 
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
 returns the same outcome rather than a 404 or a second execution.
@@ -22,6 +23,11 @@ model call, and never reaches the approval gate as a phantom incident.
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
 a sanitiser. See the note in ``web/dashboard.html``.
+
+**Health describes the parts, not the process.** ``/health`` says whether a model is
+configured, whether anyone can approve, and whether the investigation store answers. A
+service without a model still works in its degraded form, so that is ``degraded`` with a
+200; a store that does not answer means nothing works, so that is a 503.
 """
 
 from __future__ import annotations
@@ -44,9 +50,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
-from drdoom.api.auth import KeyRing, Principal, configure, require_principal
+from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
 from drdoom.audit import AuditLog
-from drdoom.config import get_settings
+from drdoom.config import get_settings, load_env_file
+from drdoom.llm.factory import UnavailableProvider
 from drdoom.observability import configure_logging, incident_context
 
 logger = logging.getLogger(__name__)
@@ -163,6 +170,40 @@ class Service:
     def stage_latencies(self) -> dict[str, Any]:
         return self.investigator.counters.snapshot()
 
+    def health(self) -> tuple[str, dict[str, Any]]:
+        """The overall verdict, and what each part it rests on reports.
+
+        Nothing here names a key or repeats an error message: the endpoint is public.
+        """
+        triage = self.investigator.triage
+        provider = self.investigator.diagnosis.provider
+        model_ready = not isinstance(provider, UnavailableProvider)
+        approvals_ready = len(current_keyring()) > 0
+        try:
+            if self.connection is not None:
+                self.connection.execute("select 1").fetchone()
+            store_ready = True
+        except Exception:
+            logger.exception("the investigation store did not answer")
+            store_ready = False
+
+        components = {
+            "model": {"ready": model_ready, "provider": provider.name, "name": provider.model},
+            "approvals": {"ready": approvals_ready},
+            "store": {"ready": store_ready},
+            "detector": {"ready": True, "name": type(triage.detector).__name__},
+            "classifier": {"ready": triage.classifier is not None},
+            "retriever": {
+                "ready": True,
+                "name": type(self.investigator.diagnosis.retriever).__name__,
+            },
+        }
+        if not store_ready:
+            return "unavailable", components
+        # The classifier is optional: without it incidents are unclassified, which the
+        # dashboard shows, and nothing else changes.
+        return ("ok" if model_ready and approvals_ready else "degraded"), components
+
 
 _service: Service | None = None
 
@@ -233,6 +274,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         configure_logging(settings.log_level, structured=settings.environment != "local")
+        if keyring is None:
+            # Read here and not when the module is imported. Until now the local .env was
+            # loaded only inside provider construction, after the key ring had already been
+            # built, so a key written there was never accepted.
+            load_env_file()
+            configure(KeyRing.from_environment())
         if _service is None:
             from drdoom.api.factory import build_service
 
@@ -242,7 +289,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     if service is not None:
         set_service(service)
-    configure(keyring or KeyRing.from_environment())
+    if keyring is not None:
+        configure(keyring)
 
     app = FastAPI(
         title="DrDoom",
@@ -251,8 +299,14 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     )
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
-        return {"status": "ok"}
+    def health() -> JSONResponse:
+        if _service is None:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "starting"}
+            )
+        verdict, components = _service.health()
+        code = status.HTTP_503_SERVICE_UNAVAILABLE if verdict == "unavailable" else 200
+        return JSONResponse(status_code=code, content={"status": verdict, "components": components})
 
     @app.get("/metrics")
     def metrics(current: CurrentService) -> dict[str, Any]:
