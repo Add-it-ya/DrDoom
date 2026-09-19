@@ -218,3 +218,110 @@ def test_threshold_selection_is_finite_for_any_budget(budget: float) -> None:
     scores = rng.normal(size=len(index))
 
     assert np.isfinite(ev.select_threshold(scores, index, series, budget_per_day=budget))
+
+
+# --- re-paging, duty cycle, pre-alarm, curves ------------------------------------------
+
+
+def standing_alarm(minutes: int, stride: int = 20):
+    """One series with a single run of firing windows lasting ``minutes``."""
+    series = [make_series("a", 2000, [])]
+    index = build_index(series, window_size=60, stride=stride)
+    scores = np.zeros(len(index))
+    scores[: minutes // stride] = 10.0
+    return scores, index
+
+
+def test_a_three_hour_standing_alarm_pages_three_times() -> None:
+    scores, index = standing_alarm(180)
+
+    assert ev.false_alarm_episodes(scores, index, threshold=1.0) == 1
+    assert ev.paged_alarms(scores, index, threshold=1.0) == 3
+
+
+def test_an_alarm_shorter_than_an_hour_pages_once_as_before() -> None:
+    scores, index = standing_alarm(40)
+
+    assert ev.paged_alarms(scores, index, 1.0) == ev.false_alarm_episodes(scores, index, 1.0) == 1
+
+
+def test_separate_short_alarms_page_as_often_as_episodes() -> None:
+    series = [make_series("a", 800, [])]
+    index = build_index(series, window_size=60, stride=20)
+    scores = np.zeros(len(index))
+    scores[[1, 2, 10, 20]] = 10.0
+
+    assert ev.paged_alarms(scores, index, 1.0) == ev.false_alarm_episodes(scores, index, 1.0)
+
+
+def test_duty_cycle_shows_the_share_of_normal_time_in_alarm() -> None:
+    series = [make_series("a", 2000, []), make_series("b", 2000, [])]
+    index = build_index(series, window_size=60, stride=20)
+    scores = np.where(index.series_index == 0, 10.0, 0.0)
+
+    overall, worst = ev.alarm_duty(scores, index, threshold=1.0)
+
+    assert overall == pytest.approx(0.5)
+    assert worst == 1.0
+
+
+def test_a_detection_the_alarm_already_covered_is_flagged_pre_alarmed() -> None:
+    events = [AnomalyEvent(event_id=1, source="test", series_id="a", start=500, end=600)]
+    series = [make_series("a", 1000, events)]
+    index = build_index(series, window_size=60, stride=20)
+    always_on = np.full(len(index), 10.0)
+    only_during = index.label.astype(float) * 10.0
+
+    [standing] = ev.event_outcomes(always_on, index, series, threshold=1.0)
+    [fresh] = ev.event_outcomes(only_during, index, series, threshold=1.0)
+
+    assert standing.detected and standing.pre_alarmed
+    assert fresh.detected and not fresh.pre_alarmed
+
+
+def test_the_report_separates_fresh_detections() -> None:
+    events = [AnomalyEvent(event_id=1, source="test", series_id="a", start=500, end=600)]
+    series = [make_series("a", 1000, events)]
+    index = build_index(series, window_size=60, stride=20)
+
+    report = ev.evaluate("on", np.full(len(index), 10.0), index, series, threshold=1.0)
+
+    assert report.detection_rate == 1.0
+    assert report.fresh_detection_rate == 0.0
+    assert report.pre_alarmed_share == 1.0
+    assert report.pages_per_day > report.false_alarms_per_day
+
+
+def test_a_budget_in_pages_is_met_in_pages() -> None:
+    rng = np.random.default_rng(4)
+    series = [make_series("a", 20000, [])]
+    index = build_index(series, window_size=60, stride=20)
+    # Slow-moving scores, so alarms stand for hours and the two counts differ.
+    scores = np.repeat(rng.normal(size=len(index) // 20 + 1), 20)[: len(index)]
+    days = ev.normal_minutes(series) / ev.MINUTES_PER_DAY
+
+    repage = ev.select_threshold(scores, index, series, budget_per_day=1.0)
+    legacy = ev.select_threshold(scores, index, series, budget_per_day=1.0, accounting="episodes")
+
+    assert ev.paged_alarms(scores, index, repage) / days <= 1.0
+    assert repage >= legacy
+
+
+def test_the_curve_rewards_detection_at_low_page_rates() -> None:
+    good = [(0.2, 0.9), (1.0, 0.95), (5.0, 1.0)]
+    noisy = [(3.0, 0.9), (6.0, 1.0)]
+
+    assert ev.curve_auc(good) > ev.curve_auc(noisy)
+    assert ev.curve_auc(good) == pytest.approx(0.95, abs=0.02)
+
+
+def test_the_paired_difference_is_over_the_same_events() -> None:
+    first = [ev.EventOutcome(i, "a", i < 8, None) for i in range(10)]
+    second = [ev.EventOutcome(i, "a", i < 5, None) for i in range(10)]
+
+    delta, (low, high) = ev.paired_delta(first, second, n_samples=500)
+
+    assert delta == pytest.approx(0.3)
+    assert low <= delta <= high
+    with pytest.raises(ValueError):
+        ev.paired_delta(first, second[::-1])
