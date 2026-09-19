@@ -139,6 +139,15 @@ model is never asked for it, and a value supplied anyway is ignored — a system
 safety argument is "a human approves risky actions" cannot let the supervised thing
 decide what counts as risky.
 
+**Nor does the plan's author get the last word on its risk.** The rating the gate uses is
+the most cautious of three: a policy floor fixed in code for each catalogue action (a node
+drain is always high, only scaling out can be low), an independent assessment from a
+separate call that is shown the incident, the plan and the exact command but not the
+author's rating, and the author's own rating. None of the three can lower another. An
+assessor that cannot answer counts as high. The gate and the audit log show all three,
+and the approval hash covers the final rating. Set `DRDOOM_RISK_PROVIDER` or
+`DRDOOM_RISK_MODEL` to have a different model do the reviewing.
+
 **Every structured response is validated, and one repair is allowed.** A malformed plan
 goes back to the model with the validation error attached, once. Not a loop: a model that
 cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
@@ -176,10 +185,10 @@ shares nothing but the database file.
 
 ```
 triage ─┬─ no incident ─────────────────────────────► end
-        └─ incident ─► diagnose ─► remediate ─► approval ─► report ─► end
-                                                   │
-                                          suspends here when
-                                          risk is medium or high
+        └─ incident ─► diagnose ─► remediate ─► assess_risk ─► approval ─► report ─► end
+                                                                  │
+                                                         suspends here when the
+                                                         final risk is medium or high
 ```
 
 Routing after triage is conditional, so a quiet system costs nothing: no retrieval, no
