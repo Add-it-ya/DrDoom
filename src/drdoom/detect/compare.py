@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
+import statistics
 from dataclasses import replace
 from pathlib import Path
 
@@ -29,7 +31,9 @@ from drdoom.data.windows import Scaler
 from drdoom.detect import evaluate as ev
 from drdoom.detect.autoencoder import AutoencoderDetector
 from drdoom.detect.base import Detector
-from drdoom.detect.baselines import all_baselines
+from drdoom.detect.baselines import NaiveResidual, all_baselines
+from drdoom.detect.conv_autoencoder import ConvAutoencoderDetector
+from drdoom.detect.fusion import MaxFusion
 from drdoom.detect.train import CRITERIA, TrainConfig, load_split, train
 
 logger = logging.getLogger(__name__)
@@ -37,6 +41,7 @@ logger = logging.getLogger(__name__)
 SOURCES = ("smd", "synthetic")
 STRATEGIES = ("time_based", "held_out_series")
 INCUMBENT = "window_spread"
+DEFAULT_SEEDS = 3
 
 
 def autoencoder_for(config: TrainConfig, scaler: Scaler) -> AutoencoderDetector:
@@ -49,6 +54,22 @@ def autoencoder_for(config: TrainConfig, scaler: Scaler) -> AutoencoderDetector:
     return detector
 
 
+def conv_for(base: TrainConfig, seed: int, train_split, scaler: Scaler) -> ConvAutoencoderDetector:
+    """Load the seed's conv checkpoint, training and saving it first if it is not on disk."""
+    root = base.models_root or get_settings().models_dir
+    path = root / base.source / base.strategy / f"conv_s{seed}.pt"
+    if path.is_file():
+        detector = ConvAutoencoderDetector.load(path, scaler)
+    else:
+        logger.info("no conv checkpoint for seed %d, training now", seed)
+        detector = ConvAutoencoderDetector(seed=seed).fit(
+            train_split.series, train_split.index.normal_only(), scaler
+        )
+        detector.save(path)
+    detector.name = f"conv_autoencoder[s{seed}]"
+    return detector
+
+
 def run_split(
     source: str,
     strategy: str,
@@ -58,6 +79,7 @@ def run_split(
     max_train_windows: int,
     data_root: Path | None = None,
     models_root: Path | None = None,
+    seeds: int = DEFAULT_SEEDS,
 ) -> list[dict]:
     """Fit, threshold and score every detector for one source and strategy."""
     base = TrainConfig(
@@ -80,6 +102,12 @@ def run_split(
         detectors.append(detector)
     for criterion in criteria:
         detectors.append(autoencoder_for(replace(base, criterion=criterion), scaler))
+
+    naive = next(d for d in detectors if isinstance(d, NaiveResidual))
+    for seed in range(seeds):
+        conv = conv_for(base, seed, train_split, scaler)
+        detectors.append(conv)
+        detectors.append(MaxFusion([conv, naive]).fit(train_split.series, train_normal, scaler))
 
     rows = []
     reports: dict[str, ev.DetectionReport] = {}
@@ -129,6 +157,16 @@ def _is_autoencoder(row: dict) -> bool:
     return row["detector"].startswith("lstm_autoencoder")
 
 
+def _is_learned(row: dict) -> bool:
+    """Any detector with a trained network in it, fused or not."""
+    return "autoencoder" in row["detector"]
+
+
+def _family(name: str) -> str:
+    """A detector's name without its seed, so repeats can be grouped."""
+    return re.sub(r"\[s\d+\]", "", name)
+
+
 def _chosen(candidates: list[dict]) -> dict:
     """The candidate validation prefers: highest curve area, then earliest detection."""
     return max(
@@ -155,8 +193,8 @@ def verdict_lines(rows: list[dict]) -> list[str]:
     lines = [
         "## What the table says",
         "",
-        "The autoencoder was built after the baselines specifically so this comparison could",
-        "be made. Each line below is generated from the table, not asserted. The better",
+        "The learned detectors were built after the baselines specifically so this comparison",
+        "could be made. Each line below is generated from the table, not asserted. The better",
         "detector is the one with the larger area under its validation detection-versus-pages",
         "curve; its test figures follow as a check.",
         "",
@@ -164,8 +202,8 @@ def verdict_lines(rows: list[dict]) -> list[str]:
     for source in SOURCES:
         for strategy in STRATEGIES:
             subset = [r for r in rows if r["source"] == source and r["strategy"] == strategy]
-            simple = [r for r in subset if not _is_autoencoder(r)]
-            learned = [r for r in subset if _is_autoencoder(r)]
+            simple = [r for r in subset if not _is_learned(r)]
+            learned = [r for r in subset if _is_learned(r)]
             if not simple or not learned:
                 continue
             best_simple = _chosen(simple)
@@ -173,7 +211,7 @@ def verdict_lines(rows: list[dict]) -> list[str]:
             margin = best_learned["val_curve_auc"] - best_simple["val_curve_auc"]
 
             if margin > 0:
-                call = f"validation prefers the autoencoder ({margin:+.3f} curve area)"
+                call = f"validation prefers the learned detector ({margin:+.3f} curve area)"
             elif margin < 0:
                 call = f"validation prefers `{best_simple['detector']}` ({margin:+.3f} curve area)"
             else:
@@ -181,11 +219,13 @@ def verdict_lines(rows: list[dict]) -> list[str]:
 
             lines.append(
                 f"- **{source} / {strategy}**: best without a network is "
-                f"{_describe(best_simple)}; the best autoencoder is {_describe(best_learned)}. "
+                f"{_describe(best_simple)}; the best learned detector is "
+                f"{_describe(best_learned)}. "
                 f"Here {call}."
             )
 
     lines += _standing_alarm_lines(rows)
+    lines += _seed_lines(rows)
 
     criteria_note: list[str] = []
     for source in SOURCES:
@@ -250,6 +290,45 @@ def _standing_alarm_lines(rows: list[dict]) -> list[str]:
         f"detections pre-alarmed; worst machine in alarm {r['worst_alarm_duty']:.0%} of the time"
         for r in heavy
     ]
+    return lines
+
+
+def _seed_lines(rows: list[dict]) -> list[str]:
+    """Mean and spread over seeds for every detector trained more than once."""
+    groups: dict[tuple[str, str, str], list[dict]] = {}
+    for row in rows:
+        if re.search(r"\[s\d+\]", row["detector"]):
+            key = (row["source"], row["strategy"], _family(row["detector"]))
+            groups.setdefault(key, []).append(row)
+    repeated = {key: group for key, group in groups.items() if len(group) > 1}
+    if not repeated:
+        return []
+
+    def spread(values: list[float]) -> str:
+        return f"{statistics.mean(values):.3f} ± {statistics.stdev(values):.3f}"
+
+    lines = [
+        "",
+        "### Across seeds",
+        "",
+        "Trained detectors were trained once per seed; mean ± standard deviation over seeds.",
+        "*Δ above zero* counts the seeds whose paired difference against",
+        f"`{INCUMBENT}` has a 95% interval entirely above zero.",
+        "",
+        "| Split | Detector | Seeds | Test curve | Detection | Pages/day | Δ above zero |",
+        "|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for (source, strategy, family), group in sorted(repeated.items()):
+        clear = sum(
+            1 for r in group if r.get("delta_vs_incumbent_ci") and r["delta_vs_incumbent_ci"][0] > 0
+        )
+        lines.append(
+            f"| {source}/{strategy} | `{family}` | {len(group)} |"
+            f" {spread([r['curve_auc'] for r in group])} |"
+            f" {spread([r['detection_rate'] for r in group])} |"
+            f" {spread([r['pages_per_day'] for r in group])} |"
+            f" {clear} of {len(group)} |"
+        )
     return lines
 
 
@@ -346,6 +425,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--criteria", nargs="+", default=list(CRITERIA))
     parser.add_argument("--max-epochs", type=int, default=15)
     parser.add_argument("--max-train-windows", type=int, default=20000)
+    parser.add_argument(
+        "--seeds", type=int, default=DEFAULT_SEEDS, help="conv autoencoder trainings per split"
+    )
     parser.add_argument("--out", type=Path, default=None)
     return parser.parse_args(argv)
 
@@ -367,6 +449,7 @@ def main(argv: list[str] | None = None) -> None:
                 tuple(args.criteria),
                 args.max_epochs,
                 args.max_train_windows,
+                seeds=args.seeds,
             )
 
     docs = args.out or get_settings().project_root / "docs"
