@@ -269,6 +269,17 @@ python -m drdoom.evals.run              # replay recorded responses
 python -m drdoom.evals.run --record     # refresh them against a live provider
 ```
 
+Risk ratings are scored separately, against sixteen hand-labelled plans, for how often a
+plan ends up rated below what it deserves. The author's rating alone under-rates 8 of them;
+adding the policy floor leaves 4, each of which only an assessor can catch. The row with the
+assessor is measured once its answers are recorded
+([docs/risk-results.md](docs/risk-results.md)).
+
+```bash
+python -m drdoom.evals.risk              # replay recorded assessor answers
+python -m drdoom.evals.risk --record     # record them against a live provider
+```
+
 Token counts are reported on every API response, with an estimated cost where the model's
 published rate has been checked. An unknown model reports tokens and no cost rather than a
 guessed figure.

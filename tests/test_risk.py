@@ -215,3 +215,80 @@ def test_rewriting_the_recorded_risk_breaks_the_chain(tmp_path) -> None:
     path.write_text(path.read_text(encoding="utf-8").replace('"low"', '"high"'), "utf-8")
 
     assert log.verify()[0] is False
+
+
+# --- the labelled cases ------------------------------------------------------------------
+
+
+def test_every_labelled_case_is_a_valid_plan_with_a_valid_label() -> None:
+    from drdoom.evals.risk import load_cases
+
+    cases = load_cases()
+
+    assert len({case["id"] for case in cases}) == len(cases) >= 15
+    for case in cases:
+        RemediationPlan.model_validate(case["plan"])
+        Diagnosis.model_validate(case["diagnosis"])
+        assert case["expected"] in {"low", "medium", "high"}
+
+
+def test_the_set_holds_under_ratings_only_an_assessor_can_catch() -> None:
+    """Otherwise it would measure the floor twice and the assessor not at all."""
+    from drdoom.agents.risk import ORDER
+    from drdoom.evals.risk import load_cases
+
+    beyond_floor = [
+        case
+        for case in load_cases()
+        if ORDER[highest(case["plan"]["risk_level"], risk_floor(case["plan"]["action"]))]
+        < ORDER[case["expected"]]
+    ]
+
+    assert len(beyond_floor) >= 3
+
+
+def test_the_rules_are_scored_against_the_label() -> None:
+    from drdoom.evals.risk import CaseResult, summarise
+
+    results = [
+        CaseResult("a", expected="high", author="low", floor="medium", assessor="high"),
+        CaseResult("b", expected="low", author="medium", floor="low", assessor="low"),
+    ]
+
+    summary = summarise(results)
+
+    assert (summary["author"]["under"], summary["author"]["over"]) == (1, 1)
+    assert summary["author_and_floor"]["under_ids"] == ["a"]
+    assert summary["all_three"]["under"] == 0
+
+
+def test_without_recorded_answers_the_assessor_row_is_not_measured() -> None:
+    from drdoom.evals.risk import CaseResult, render, summarise
+
+    results = [CaseResult("a", expected="high", author="low", floor="medium", assessor=None)]
+
+    page = render(summarise(results), results)
+
+    assert "| Author, floor and assessor (now) | not measured |" in page
+
+
+def test_a_case_is_run_through_the_assessor() -> None:
+    from drdoom.evals.risk import load_cases, run_case
+
+    result = run_case(RiskAssessor(StubProvider(default=ASSESSMENT)), load_cases()[0])
+
+    assert result.assessor == "medium"
+    assert result.floor == risk_floor(load_cases()[0]["plan"]["action"])
+
+
+def test_the_published_risk_page_is_what_the_suite_writes(tmp_path) -> None:
+    from pathlib import Path
+
+    from drdoom.evals.risk import main
+
+    main(["--out", str(tmp_path)])
+    published = Path(__file__).resolve().parents[1] / "docs" / "risk-results.md"
+
+    assert (tmp_path / "risk-results.md").read_text(encoding="utf-8") == published.read_text(
+        encoding="utf-8"
+    )
