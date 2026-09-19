@@ -23,8 +23,10 @@ from drdoom.config import get_settings
 from drdoom.data import synthetic
 from drdoom.data.windows import Scaler, build_index
 from drdoom.detect.base import Detector
-from drdoom.detect.baselines import WindowSpread
+from drdoom.detect.baselines import NaiveResidual, WindowSpread
+from drdoom.detect.conv_autoencoder import ConvAutoencoderDetector
 from drdoom.detect.evaluate import select_threshold
+from drdoom.detect.fusion import MaxFusion
 from drdoom.executor import DryRunExecutor
 from drdoom.llm.base import LLMProvider
 from drdoom.llm.factory import build_provider_or_unavailable
@@ -37,13 +39,35 @@ logger = logging.getLogger(__name__)
 WINDOW = 60
 
 
-def build_detector() -> tuple[Detector, float, list[str]]:
-    """A baseline fitted on generated normal traffic, with a threshold that is measured.
+# Training windows for the conv autoencoder overlap more than the baseline needs: it has
+# weights to fit, and generated traffic is the only data the service has.
+TRAIN_STRIDE = 5
+DETECTOR_SEED = 0
 
-    This is still the window statistic an earlier measurement favoured. That measurement
-    counted a standing alarm as one page however long it lasted; counted as pages a person
-    receives, the statistic ranks last of the useful detectors on real data (see
-    docs/detection-results.md), and replacing it is the next change.
+
+def fit_detector(kind: str, series: list, scaler: Scaler) -> Detector:
+    """Fit the configured detector on generated normal traffic."""
+    baseline_index = build_index(series, WINDOW, stride=20).normal_only()
+    if kind == "window_spread":
+        return WindowSpread().fit(series, baseline_index, scaler)
+
+    dense_index = build_index(series, WINDOW, stride=TRAIN_STRIDE).normal_only()
+    conv = ConvAutoencoderDetector(seed=DETECTOR_SEED).fit(series, dense_index, scaler)
+    if kind == "conv":
+        return conv
+    naive = NaiveResidual().fit(series, baseline_index, scaler)
+    return MaxFusion([conv, naive]).fit(series, baseline_index, scaler)
+
+
+def build_detector(kind: str | None = None) -> tuple[Detector, float, list[str]]:
+    """The configured detector fitted on generated normal traffic, with a measured threshold.
+
+    ``DRDOOM_DETECTOR`` chooses it. The default is the centred conv autoencoder, which
+    measured better than ``window_spread`` once pages were counted as a person receives
+    them (docs/detection-results.md). It is trained here, in a few seconds, with a fixed
+    seed, so every start builds the same detector and the same threshold. If training
+    fails for any reason the service falls back to ``window_spread`` and says so, rather
+    than refusing to start.
 
     The threshold is chosen the way every published result chooses one: on separately
     generated validation traffic, as the most sensitive value that stays inside the false
@@ -51,15 +75,23 @@ def build_detector() -> tuple[Detector, float, list[str]]:
     is expressed in the units of one particular scaler, and quietly stops meaning anything
     when that scaler changes.
     """
+    kind = kind or get_settings().detector
     series = synthetic.generate(n_scenarios=6, days=2, seed=7)
-    normal = build_index(series, WINDOW, stride=20).normal_only()
-    detector = WindowSpread()
-    detector.fit(series, normal, Scaler.fit(series))
+    scaler = Scaler.fit(series)
+    try:
+        detector = fit_detector(kind, series, scaler)
+    except Exception:
+        logger.exception("could not fit the %s detector, falling back to window_spread", kind)
+        detector = fit_detector("window_spread", series, scaler)
 
     validation = synthetic.generate(n_scenarios=6, days=2, seed=8)
     index = build_index(validation, WINDOW)
     threshold = select_threshold(detector.score(validation, index), index, validation)
-    logger.info("detector threshold %.4f chosen against the false alarm budget", threshold)
+    logger.info(
+        "detector %s, threshold %.4f chosen against the false alarm budget",
+        detector.name,
+        threshold,
+    )
     return detector, threshold, list(synthetic.FEATURE_NAMES)
 
 

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     # either one to have a different model review the plans the first one writes.
     risk_provider: Literal["groq", "anthropic", "stub"] | None = None
     risk_model: str | None = None
+    # What triage scores windows with. See drdoom.api.factory.build_detector.
+    detector: Literal["conv", "conv+naive", "window_spread"] = "conv"
 
     @computed_field
     @property

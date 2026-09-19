@@ -200,7 +200,7 @@ class Service:
             },
             "approvals": {"ready": approvals_ready},
             "store": {"ready": store_ready},
-            "detector": {"ready": True, "name": type(triage.detector).__name__},
+            "detector": {"ready": True, "name": triage.detector.name},
             "classifier": {"ready": triage.classifier is not None},
             "retriever": {
                 "ready": True,

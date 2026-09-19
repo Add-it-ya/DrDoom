@@ -22,7 +22,7 @@ authorises it — with the decision written to an append-only audit log.
 |---|---|
 | Project foundations | Done |
 | Data pipeline | Done |
-| Anomaly detection | Re-measured; the served detector is being replaced |
+| Anomaly detection | Done (conv autoencoder, re-measured) |
 | Root-cause classification | Done |
 | Retrieval | Done |
 | Agents and model layer | Done |
@@ -63,22 +63,38 @@ earlier claim that the autoencoder "loses to a one-line statistic" came from the
 counting and does not hold.
 
 Detectors are ranked by **curve area**: the mean, over budgets from half a page to four
-pages per series-day, of the best detection each budget allows. Real data, future
+pages per series-day, of the best detection each budget allows. Learned detectors were
+trained three times with different seeds; the figures are the mean. Real data, future
 incidents on known machines (197 incidents):
 
 | Detector | Curve area | Detection | Pages/day on test | Normal time in alarm |
 |---|---:|---:|---:|---:|
+| `conv_autoencoder+naive_residual` | 0.621 | 0.592 | 1.70 | 6.2% |
+| `conv_autoencoder` | 0.569 | 0.579 | 1.81 | 5.5% |
 | `naive_residual` | 0.553 | 0.508 | 1.57 | 5.9% |
 | `lstm_autoencoder` | 0.531 | 0.564 | 2.04 | 6.8% |
-| `window_spread` (currently served) | 0.489 | 0.497 | 2.08 | 7.3% |
+| `window_spread` (served until now) | 0.489 | 0.497 | 2.08 | 7.3% |
 
-On unseen machines `ewma_residual` leads (curve 0.534), `window_spread` reaches 0.454, and
-the autoencoder 0.417. On synthetic data every strong detector reaches 1.000.
+The **conv autoencoder** reconstructs each window with every metric's mean removed, so it
+judges the shape of a window and not its level: the real dataset drifts between periods,
+and an autoencoder over absolute levels (the LSTM) mistakes that drift for incidents. Fused
+with `naive_residual` — the larger of the two scores, each on a scale fitted to its own
+training scores — it detects about nine more incidents in every hundred than
+`window_spread` at fewer pages, and the paired difference is above zero on all three seeds.
+On unseen machines the fusion reaches 0.600 against 0.454, though there the four validation
+machines prefer `ewma_residual` (0.534 on test), so that split does not settle a winner.
+On synthetic data every strong detector reaches 1.000; the conv autoencoder detects in
+13 to 15 minutes against 18 to 19 for `window_spread`.
 
-Two things the table does not hide. No detector keeps to its budget on test: a threshold
-that pages once a day on validation pages 1.6 to 2.1 times on future incidents and up to
-4.2 on unseen machines. And the service still runs `window_spread`; replacing it is the
-next change, judged on these curves.
+The service now scores with the conv autoencoder, trained at start-up on generated
+traffic with a fixed seed. `DRDOOM_DETECTOR` selects `conv` (the default), `conv+naive`,
+or `window_spread`; if training fails the service falls back to `window_spread` and logs
+why. The fusion measured best on real telemetry, and the service does not see real
+telemetry yet; on its generated traffic the plain autoencoder spends less time in alarm.
+
+One thing the table does not hide: no detector keeps to its budget on test. A threshold
+that pages once a day on validation pages 1.6 to 2.1 times on future incidents and more on
+unseen machines.
 
 Results here are not point-adjusted. Much of the published work on this benchmark
 credits a whole anomaly segment as detected when any single point inside it fires,

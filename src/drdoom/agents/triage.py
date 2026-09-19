@@ -5,8 +5,9 @@ part of the system, and the language layer downstream depends on them being deci
 before it is asked anything.
 
 Both components are injected rather than constructed, so the detector that
-measurement actually favoured can be swapped in without editing this file. On the real
-dataset that was a window statistic, not the autoencoder.
+measurement actually favoured can be swapped in without editing this file. That happened
+once already: a window statistic was served until pages were counted properly, and the
+centred conv autoencoder replaced it.
 """
 
 from __future__ import annotations
