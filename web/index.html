@@ -234,12 +234,23 @@ function showDiagnosis(data) {
   fill("diagnose", wrapper);
 }
 
+/** How the final risk was reached: three ratings, the most cautious stands. */
+function describeRisk(risk) {
+  if (!risk) return null;
+  const assessor = risk.assessor || (risk.assessor_status === "not_needed"
+    ? "not needed (already high)"
+    : "no answer (" + risk.assessor_status + "), counted as high");
+  return "author " + risk.author + ", policy floor " + risk.floor + ", independent " + assessor;
+}
+
 function showPlan(data) {
   const p = data.plan || {};
   fill("remediate", details([
     ["Immediate action", p.immediate_action],
     ["Catalogue action", p.action || "none (approving runs nothing)"],
     ["Risk", p.risk_level, p.risk_level],
+    ["Rated by", describeRisk(data.risk)],
+    ["Worst case", data.risk && data.risk.worst_case],
     ["Needs approval", p.requires_approval ? "yes" : "no"],
     ["Short-term fix", p.short_term_fix],
     ["Long-term fix", p.long_term_fix],
@@ -264,6 +275,8 @@ function showGate(pending) {
     ["Action", pending.immediate_action],
     ["Will run", pending.would_run || "nothing (the plan names no catalogue action)"],
     ["Risk", pending.risk_level, pending.risk_level],
+    ["Rated by", describeRisk(pending.risk)],
+    ["Worst case", pending.risk && pending.risk.worst_case],
     ["Rollback", pending.rollback],
   ]));
   const hash = document.createElement("div");
@@ -335,7 +348,7 @@ function handleEvent(block) {
   if (name === "accepted") { incidentId = data.incident_id; }
   else if (name === "triage") { showTriage(data); }
   else if (name === "diagnose") { showDiagnosis(data); }
-  else if (name === "remediate") { showPlan(data); }
+  else if (name === "remediate" || name === "assess_risk") { showPlan(data); }
   else if (name === "awaiting_approval") { showGate(data); }
   else if (name === "execute" || name === "escalate") { showOutcome(data); }
   else if (name === "report") { showReport(data.report); }

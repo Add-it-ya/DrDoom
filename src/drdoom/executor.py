@@ -30,7 +30,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from drdoom.agents.schemas import RemediationPlan
+from drdoom.agents.schemas import RemediationPlan, RiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +69,17 @@ class ApprovalToken:
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """One action the system knows how to perform."""
+    """One action the system knows how to perform, and the least risk it can carry.
+
+    ``risk_floor`` is policy, not a prediction. No rating from a model can take a plan
+    that runs this action below it, so the floor is the one rating a poisoned document
+    or a flattering self-assessment cannot move.
+    """
 
     kind: str
     template: str
     description: str
+    risk_floor: RiskLevel
 
 
 CATALOGUE: tuple[ActionSpec, ...] = (
@@ -81,26 +87,36 @@ CATALOGUE: tuple[ActionSpec, ...] = (
         kind="rollout_restart",
         template="kubectl rollout restart deployment/{target}",
         description="Recreate the pods of a deployment without changing its image",
+        # Every pod is replaced; a service with one replica or a slow start drops traffic.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="rollout_undo",
         template="kubectl rollout undo deployment/{target}",
         description="Return a deployment to its previous revision",
+        # The previous revision may not match today's schema, config or dependencies.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="scale_out",
         template="kubectl scale deployment/{target} --replicas=6",
         description="Raise the replica count of a deployment",
+        # Adds capacity and removes none; undone by scaling back.
+        risk_floor="low",
     ),
     ActionSpec(
         kind="set_memory_limit",
         template="kubectl set resources deployment/{target} --limits=memory=2Gi",
         description="Apply a memory limit to a deployment",
+        # A limit set too low turns a leak into a crash loop, and it restarts every pod.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="cordon_node",
         template="kubectl drain node/{target} --ignore-daemonsets",
         description="Move workloads off a node for maintenance",
+        # Evicts everything on the node at once, including workloads unrelated to the incident.
+        risk_floor="high",
     ),
 )
 
@@ -134,6 +150,16 @@ class ExecutionResult:
 def action_spec(kind: str | None) -> ActionSpec | None:
     """The catalogue entry a plan names, if it names one."""
     return next((spec for spec in CATALOGUE if spec.kind == kind), None) if kind else None
+
+
+def risk_floor(kind: str | None) -> RiskLevel:
+    """The least risk a plan naming this action can be rated.
+
+    A plan that names nothing runs nothing, so its floor is low; the other ratings still
+    decide whether a human reads it.
+    """
+    spec = action_spec(kind)
+    return spec.risk_floor if spec else "low"
 
 
 class DryRunExecutor:

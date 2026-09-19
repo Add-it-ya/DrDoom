@@ -84,6 +84,16 @@ class RemediationPlan(BaseModel):
         return self.risk_level in APPROVAL_REQUIRED_AT
 
 
+class RiskAssessment(BaseModel):
+    """An independent rating of a plan, written without seeing the author's."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    risk_level: RiskLevel = Field(description="Blast radius if this action goes wrong")
+    worst_case: str = Field(description="The worst realistic outcome of running the action")
+    reasons: list[str] = Field(default_factory=list, max_length=5)
+
+
 class Postmortem(BaseModel):
     """The written record of an incident and what was decided about it."""
 

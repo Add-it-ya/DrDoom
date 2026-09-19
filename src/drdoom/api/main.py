@@ -177,7 +177,9 @@ class Service:
         """
         triage = self.investigator.triage
         provider = self.investigator.diagnosis.provider
+        reviewer = self.investigator.risk.provider
         model_ready = not isinstance(provider, UnavailableProvider)
+        reviewer_ready = not isinstance(reviewer, UnavailableProvider)
         approvals_ready = len(current_keyring()) > 0
         try:
             if self.connection is not None:
@@ -189,6 +191,13 @@ class Service:
 
         components = {
             "model": {"ready": model_ready, "provider": provider.name, "name": provider.model},
+            # Without it every plan below high is treated as high, so nothing is unsafe,
+            # but every plan waits for a human.
+            "risk_assessor": {
+                "ready": reviewer_ready,
+                "provider": reviewer.name,
+                "name": reviewer.model,
+            },
             "approvals": {"ready": approvals_ready},
             "store": {"ready": store_ready},
             "detector": {"ready": True, "name": type(triage.detector).__name__},
@@ -202,7 +211,8 @@ class Service:
             return "unavailable", components
         # The classifier is optional: without it incidents are unclassified, which the
         # dashboard shows, and nothing else changes.
-        return ("ok" if model_ready and approvals_ready else "degraded"), components
+        ready = model_ready and reviewer_ready and approvals_ready
+        return ("ok" if ready else "degraded"), components
 
 
 _service: Service | None = None

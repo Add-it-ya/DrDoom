@@ -25,6 +25,7 @@ from drdoom.agents.graph import (
 )
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
@@ -35,7 +36,7 @@ from drdoom.llm.stub import StubProvider
 from drdoom.rag.corpus import Document
 from drdoom.rag.index import BM25Index
 from drdoom.rag.ingest import chunk_all
-from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, disturbed_window
+from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, RISK_LOW, disturbed_window
 
 WORKER = Path(__file__).parent / "_restart_worker.py"
 
@@ -59,6 +60,7 @@ def make_investigator(
     plan_json: str = PLAN,
     threshold: float = 5.0,
     audit_path: Path | None = None,
+    risk_json: str = RISK_LOW,
 ) -> Investigator:
     quiet = np.random.default_rng(0).normal(50, 1, size=(60, 2)).astype(np.float32)
     series, index = window_to_series(quiet, ["a", "b"])
@@ -85,6 +87,7 @@ def make_investigator(
         ReportingAgent(StubProvider(default=POSTMORTEM)),
         checkpointer,
         audit=AuditLog(audit_path) if audit_path else AuditLog(Path(mkdtemp()) / "audit.jsonl"),
+        risk=RiskAssessor(StubProvider(default=risk_json)),
     )
 
 
@@ -558,3 +561,108 @@ def test_every_streamed_log_line_carries_its_incident(tmp_path) -> None:
 
     assert seen
     assert set(seen) == {"tagged"}
+
+
+# --- the independent risk rating ----------------------------------------------------
+
+
+def low_plan(action: str | None) -> str:
+    return json.dumps(json.loads(LOW_RISK_PLAN) | {"action": action})
+
+
+def assessed(level: str) -> str:
+    return json.dumps({"risk_level": level, "worst_case": "w", "reasons": []})
+
+
+def test_the_policy_floor_overrules_an_author_who_calls_a_drain_low(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        outcome = make_investigator(checkpointer, plan_json=low_plan("cordon_node")).start(
+            disturbed_window(), "latency climbing", "incident"
+        )
+
+    assert outcome.status == "awaiting_approval"
+    assert (
+        outcome.state["risk"].items() >= {"author": "low", "floor": "high", "final": "high"}.items()
+    )
+    assert outcome.pending["risk_level"] == "high"
+
+
+def test_the_assessor_overrules_an_author_who_under_rates(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        outcome = make_investigator(
+            checkpointer, plan_json=low_plan("scale_out"), risk_json=assessed("medium")
+        ).start(disturbed_window(), "latency climbing", "incident")
+
+    assert outcome.status == "awaiting_approval"
+    assert outcome.state["risk"]["assessor"] == "medium"
+    assert outcome.state["risk"]["final"] == "medium"
+
+
+def test_the_approved_hash_covers_the_final_rating_not_the_authors(tmp_path) -> None:
+    """A human approves the plan as re-rated; the author's version could not be run."""
+    from drdoom.agents.schemas import RemediationPlan
+    from drdoom.executor import plan_hash
+
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        outcome = make_investigator(
+            checkpointer, plan_json=low_plan("scale_out"), risk_json=assessed("medium")
+        ).start(disturbed_window(), "latency climbing", "incident")
+
+    shown = RemediationPlan.model_validate(outcome.plan)
+    authored = RemediationPlan.model_validate_json(low_plan("scale_out"))
+    assert shown.risk_level == "medium"
+    assert outcome.pending["plan_hash"] == plan_hash(shown) != plan_hash(authored)
+
+
+def test_a_plan_all_three_call_low_runs_without_a_human(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        outcome = make_investigator(checkpointer, plan_json=low_plan("scale_out")).start(
+            disturbed_window(), "latency climbing", "incident"
+        )
+
+    assert outcome.status == "complete"
+    assert outcome.executed is True
+    assert outcome.state["risk"]["final"] == "low"
+
+
+def test_an_assessor_that_cannot_answer_sends_the_plan_to_a_human(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, plan_json=low_plan("scale_out"))
+        investigator.risk.provider = StubProvider(fail_with=LLMUnavailableError("down"))
+        outcome = investigator.start(disturbed_window(), "latency climbing", "incident")
+
+    assert outcome.status == "awaiting_approval"
+    assert outcome.state["risk"]["assessor_status"] == "unavailable"
+    assert outcome.state["risk"]["final"] == "high"
+    assert outcome.state["degraded"] is True
+
+
+def test_a_plan_already_rated_high_is_not_assessed_again(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+
+    assert investigator.risk.provider.calls == []
+
+
+def test_the_gate_and_the_audit_show_all_three_ratings(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(
+            checkpointer,
+            plan_json=low_plan("rollout_restart"),
+            audit_path=audit_path,
+        )
+        suspended = investigator.start(disturbed_window(), "latency climbing", "incident")
+        investigator.resume("incident", approved=True, principal="aditya")
+
+    risk = suspended.pending["risk"]
+    assert (risk["author"], risk["floor"], risk["assessor"], risk["final"]) == (
+        "low",
+        "medium",
+        "low",
+        "medium",
+    )
+    [entry] = AuditLog(audit_path).entries()
+    assert entry.risk == risk
+    assert entry.risk_level == "medium"

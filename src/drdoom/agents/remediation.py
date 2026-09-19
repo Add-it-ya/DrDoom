@@ -1,9 +1,10 @@
 """Remediation: propose a fix, and classify how dangerous it is.
 
 The plan is retrieved against remediation-shaped language so the passages are about
-fixing rather than describing. The model proposes an action and rates its blast radius;
-whether that rating demands a human is decided by the schema, not here and not by the
-model. See ``RemediationPlan.requires_approval``.
+fixing rather than describing. The model proposes an action and rates its blast radius,
+but that rating is only the author's view of its own work. The rating the gate uses is
+decided afterwards, as the most cautious of this one, a policy floor for the action and
+an independent assessment; see ``drdoom.agents.risk``.
 
 Nothing in this module executes anything. Proposing and doing are separated so that the
 approval gate has something real to stand between.
@@ -39,10 +40,14 @@ from drdoom.rag.rerank import NoReranker, Reranker
 
 logger = logging.getLogger(__name__)
 
+# The rubric says what each level means and nothing about what follows from it. It used
+# to add that low "is safe to apply unattended", which told the rater which answer skips
+# the human. The rating is now one of three, and the others are taken independently; see
+# drdoom.agents.risk.
 SYSTEM = (
     "You are proposing a remediation for a live production incident. Ground every step "
-    "in the documentation excerpts provided. Rate risk by blast radius: low is safe to "
-    "apply unattended, medium can disturb live traffic, high can cause an outage or "
+    "in the documentation excerpts provided. Rate risk by blast radius: low cannot "
+    "disturb live traffic, medium can disturb live traffic, high can cause an outage or "
     "lose data."
 )
 
@@ -115,7 +120,7 @@ class RemediationAgent:
                 failure=failure_kind(error),
             )
 
-        logger.info("plan rated %s, approval required: %s", plan.risk_level, plan.requires_approval)
+        logger.info("plan proposed, rated %s by its author", plan.risk_level)
         return RemediationResult(plan=plan, citations=to_citations(hits), completions=completions)
 
     def _degraded(self, hits: list[Hit], reason: str) -> RemediationPlan:

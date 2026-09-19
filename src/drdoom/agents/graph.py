@@ -12,6 +12,12 @@ thread from where it stopped. Nothing is held in process memory between the two,
 restart, a deploy, or a second worker picking up the request all behave the same. That is
 the property a plain function call cannot offer, and the reason this is a graph at all.
 
+Between writing a plan and asking about it, the plan's risk is decided again. The author's
+rating is one of three: a policy floor for the action it names and an independent
+assessment are taken as well, and the most cautious stands. The plan the gate shows, and
+whose hash an approval carries, is the plan with that final rating, so the rating a human
+approved is part of what they approved. See ``drdoom.agents.risk``.
+
 Approval and rejection lead to different places. An approved plan reaches an executor
 carrying a token issued at the moment of the decision; a rejected one is escalated and
 never reaches the executor at all. Both are written to the audit log, because a review
@@ -46,11 +52,12 @@ from langgraph.types import Command, interrupt
 from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor, highest
 from drdoom.agents.schemas import Citation, Diagnosis, RemediationPlan
 from drdoom.agents.triage import TriageAgent
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
-from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash
+from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash, risk_floor
 from drdoom.observability import Counters, Timings, incident_context, timed
 
 logger = logging.getLogger(__name__)
@@ -82,6 +89,7 @@ class InvestigationState(TypedDict, total=False):
     diagnosis: dict[str, Any]
     citations: list[dict[str, Any]]
     plan: dict[str, Any]
+    risk: dict[str, Any]
     decision: str
     approval: dict[str, Any]
     execution: dict[str, Any]
@@ -152,11 +160,15 @@ class Investigator:
         executor: DryRunExecutor | None = None,
         audit: AuditLog | None = None,
         counters: Counters | None = None,
+        risk: RiskAssessor | None = None,
     ) -> None:
         self.triage = triage
         self.diagnosis = diagnosis
         self.remediation = remediation
         self.reporting = reporting
+        # A separate call, not a separate model, unless one is configured: a fresh context
+        # that never sees the author's rating already removes the anchoring.
+        self.risk = risk or RiskAssessor(remediation.provider)
         self.executor = executor or DryRunExecutor()
         self.audit = audit or AuditLog()
         self.counters = counters or Counters()
@@ -202,6 +214,51 @@ class Investigator:
             update["degraded"] = True
         return update
 
+    def _assess_node(self, state: InvestigationState) -> dict:
+        with timed("assess_risk", self._timings(state)):
+            return self._assess(state)
+
+    def _assess(self, state: InvestigationState) -> dict:
+        """Rate the plan again, independently, and keep the most cautious rating."""
+        plan = RemediationPlan.model_validate(state["plan"])
+        author = plan.risk_level
+        floor = risk_floor(plan.action)
+        record: dict[str, Any] = {"author": author, "floor": floor}
+        update: dict[str, Any] = {}
+
+        if author == "high":
+            # Nothing can rate it higher, so there is nothing an assessment could change.
+            record |= {"assessor": None, "assessor_status": "not_needed"}
+            final = author
+        else:
+            outcome = self.risk.run(
+                state["triage"],
+                Diagnosis.model_validate(state["diagnosis"]),
+                plan,
+                self.executor.preview(plan),
+                [Citation.model_validate(item) for item in state.get("citations", [])],
+            )
+            assessment = outcome.assessment
+            record |= {
+                "assessor": assessment.risk_level if assessment else None,
+                "assessor_status": outcome.failure or "assessed",
+                "worst_case": assessment.worst_case if assessment else None,
+                "reasons": list(assessment.reasons) if assessment else [],
+            }
+            final = highest(floor, outcome.level, author)
+            update |= _usage(outcome.completions)
+            if outcome.degraded:
+                update["degraded"] = True
+
+        record["final"] = final
+        if final != author:
+            logger.info("risk raised from %s to %s (floor %s)", author, final, floor)
+        update |= {
+            "plan": plan.model_copy(update={"risk_level": final}).model_dump(),
+            "risk": record,
+        }
+        return update
+
     def _approval_node(self, state: InvestigationState) -> dict:
         """Decide, and on approval mint the token that authorises this exact plan."""
         plan = RemediationPlan.model_validate(state["plan"])
@@ -220,6 +277,7 @@ class Investigator:
                 "action": plan.action,
                 "would_run": self.executor.preview(plan),
                 "risk_level": plan.risk_level,
+                "risk": state.get("risk"),
                 "rollback": plan.rollback,
                 "plan_hash": plan_hash(plan),
             }
@@ -252,6 +310,7 @@ class Investigator:
             plan_hash=plan_hash(plan),
             executed=result.executed,
             execution=result.summary,
+            risk=state.get("risk"),
         )
         return {"execution": result.as_dict()}
 
@@ -272,6 +331,7 @@ class Investigator:
             plan_hash=plan_hash(plan),
             executed=False,
             execution="nothing was executed (rejected)",
+            risk=state.get("risk"),
         )
         logger.warning("incident escalated after rejection")
         return {"escalation": message, "execution": {"executed": False, "kind": "rejected"}}
@@ -316,6 +376,7 @@ class Investigator:
         graph.add_node("triage", self._triage_node)
         graph.add_node("diagnose", self._diagnose_node)
         graph.add_node("remediate", self._remediate_node)
+        graph.add_node("assess_risk", self._assess_node)
         graph.add_node("approval", self._approval_node)
         graph.add_node("execute", self._execute_node)
         graph.add_node("escalate", self._escalate_node)
@@ -326,7 +387,8 @@ class Investigator:
             "triage", self._route_after_triage, {"diagnose": "diagnose", END: END}
         )
         graph.add_edge("diagnose", "remediate")
-        graph.add_edge("remediate", "approval")
+        graph.add_edge("remediate", "assess_risk")
+        graph.add_edge("assess_risk", "approval")
         graph.add_conditional_edges(
             "approval", self._route_after_approval, {"execute": "execute", "escalate": "escalate"}
         )

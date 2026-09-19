@@ -16,6 +16,7 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import Investigator, checkpoint_path
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import Classifier, TriageAgent, window_to_series
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
@@ -111,6 +112,11 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     detector, threshold, feature_names = build_detector()
     retriever = build_retriever(use_dense=use_dense)
     model = provider or build_provider_or_unavailable(settings.llm_provider)
+    reviewer = model
+    if provider is None and (settings.risk_provider or settings.risk_model):
+        reviewer = build_provider_or_unavailable(
+            settings.risk_provider or settings.llm_provider, settings.risk_model
+        )
     audit = AuditLog()
 
     checkpointer, connection = make_checkpointer(checkpoint_path())
@@ -129,8 +135,14 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
         checkpointer,
         executor=DryRunExecutor(),
         audit=audit,
+        risk=RiskAssessor(reviewer),
     )
-    logger.info("service ready with provider %s", model.name)
+    logger.info(
+        "service ready with provider %s, risk reviewed by %s/%s",
+        model.name,
+        reviewer.name,
+        reviewer.model,
+    )
     return Service(investigator=investigator, audit=audit, connection=connection)
 
 

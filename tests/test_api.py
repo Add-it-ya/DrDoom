@@ -15,6 +15,7 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import Investigator, make_checkpointer
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.api.auth import KeyRing
 from drdoom.api.main import Service, create_app, set_service
@@ -25,7 +26,7 @@ from drdoom.llm.stub import StubProvider
 from drdoom.rag.corpus import Document
 from drdoom.rag.index import BM25Index
 from drdoom.rag.ingest import chunk_all
-from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, disturbed_window
+from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, RISK_LOW, disturbed_window
 
 KEY = "test-key-value"
 PRINCIPAL = "aditya"
@@ -84,6 +85,7 @@ def build_service(tmp_path: Path, diagnosis=DIAGNOSIS, postmortem=POSTMORTEM) ->
         ReportingAgent(StubProvider(default=postmortem)),
         checkpointer,
         audit=audit,
+        risk=RiskAssessor(StubProvider(default=RISK_LOW)),
     )
     return Service(investigator=investigator, audit=audit, connection=connection)
 
@@ -655,3 +657,28 @@ def test_a_missing_provider_key_starts_a_degraded_service_not_a_crash(monkeypatc
     assert isinstance(provider, UnavailableProvider)
     with pytest.raises(LLMUnavailableError):
         provider.complete([])
+
+
+def test_health_reports_the_risk_assessor(client) -> None:
+    assert client.get("/health").json()["components"]["risk_assessor"]["ready"] is True
+
+
+def test_a_missing_risk_assessor_model_is_degraded_not_unsafe(tmp_path) -> None:
+    from drdoom.llm.factory import UnavailableProvider
+
+    service = build_service(tmp_path)
+    service.investigator.risk.provider = UnavailableProvider("no key")
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        body = local.get("/health").json()
+    set_service(None)
+
+    assert body["status"] == "degraded"
+    assert body["components"]["risk_assessor"]["ready"] is False
+
+
+def test_the_gate_shows_how_the_risk_was_decided(client) -> None:
+    body = client.post("/investigate", json=window_payload()).json()
+
+    assert set(body["awaiting"]["risk"]) >= {"author", "floor", "assessor", "final"}

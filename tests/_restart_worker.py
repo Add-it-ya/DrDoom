@@ -19,6 +19,7 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import Investigator, open_checkpointer
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
@@ -57,6 +58,16 @@ POSTMORTEM = json.dumps(
     }
 )
 
+# What the independent assessor answers in these tests. Low, so that whatever the final
+# rating is, it was set by the floor or the author and the test says which.
+RISK_LOW = json.dumps(
+    {
+        "risk_level": "low",
+        "worst_case": "Nothing beyond a short delay.",
+        "reasons": ["reversible"],
+    }
+)
+
 FEATURES = ["a", "b"]
 THRESHOLD = 5.0
 
@@ -87,6 +98,7 @@ def build(checkpointer, audit_path: Path) -> Investigator:
         ReportingAgent(StubProvider(default=POSTMORTEM)),
         checkpointer,
         audit=AuditLog(audit_path),
+        risk=RiskAssessor(StubProvider(default=RISK_LOW)),
     )
 
 
