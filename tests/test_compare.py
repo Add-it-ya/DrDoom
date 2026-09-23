@@ -60,7 +60,7 @@ def test_verdict_names_the_network_when_validation_prefers_it() -> None:
         row("lstm_autoencoder[normal_val_loss]", "smd", "time_based", 0.75),
     ]
 
-    assert "validation prefers the autoencoder" in "\n".join(verdict_lines(rows))
+    assert "validation prefers the learned detector" in "\n".join(verdict_lines(rows))
 
 
 def test_the_winner_is_chosen_on_validation_not_on_test() -> None:
@@ -156,3 +156,17 @@ def test_cli_defaults_cover_everything() -> None:
     assert args.source == "both"
     assert args.strategy == "both"
     assert len(args.criteria) == 3
+
+
+def test_seeded_detectors_are_summarised_across_seeds() -> None:
+    rows = [row("window_spread", "smd", "time_based", 0.50)]
+    for seed, detection in enumerate([0.58, 0.60, 0.62]):
+        entry = row(f"conv_autoencoder[s{seed}]", "smd", "time_based", detection)
+        entry["delta_vs_incumbent_ci"] = [0.01, 0.1] if seed else [-0.01, 0.1]
+        rows.append(entry)
+
+    text = "\n".join(verdict_lines(rows))
+
+    assert "### Across seeds" in text
+    assert "| smd/time_based | `conv_autoencoder` | 3 | 0.600 ± 0.020 |" in text
+    assert "2 of 3" in text

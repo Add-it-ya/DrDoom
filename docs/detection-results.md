@@ -40,15 +40,15 @@ one outcome, counted once.
 
 ## What the table says
 
-The autoencoder was built after the baselines specifically so this comparison could
-be made. Each line below is generated from the table, not asserted. The better
+The learned detectors were built after the baselines specifically so this comparison
+could be made. Each line below is generated from the table, not asserted. The better
 detector is the one with the larger area under its validation detection-versus-pages
 curve; its test figures follow as a check.
 
-- **smd / time_based**: best without a network is `naive_residual` (test curve 0.553; detection 0.508, 0.436 fresh, at 1.57 pages/day with 5.9% of normal time in alarm); the best autoencoder is `lstm_autoencoder[normal_val_loss]` (test curve 0.531; detection 0.564, 0.462 fresh, at 2.04 pages/day with 6.8% of normal time in alarm). Here validation prefers `naive_residual` (-0.095 curve area).
-- **smd / held_out_series**: best without a network is `ewma_residual` (test curve 0.534; detection 0.713, 0.554 fresh, at 4.22 pages/day with 14.8% of normal time in alarm); the best autoencoder is `lstm_autoencoder[normal_val_loss]` (test curve 0.417; detection 0.188, 0.188 fresh, at 0.02 pages/day with 0.0% of normal time in alarm). Here validation prefers `ewma_residual` (-0.391 curve area).
-- **synthetic / time_based**: best without a network is `window_spread` (test curve 1.000; detection 1.000, 0.984 fresh, at 0.78 pages/day with 0.9% of normal time in alarm); the best autoencoder is `lstm_autoencoder[normal_val_loss]` (test curve 1.000; detection 1.000, 0.989 fresh, at 0.95 pages/day with 1.1% of normal time in alarm). Here validation cannot separate them.
-- **synthetic / held_out_series**: best without a network is `window_spread` (test curve 1.000; detection 1.000, 0.989 fresh, at 0.83 pages/day with 1.0% of normal time in alarm); the best autoencoder is `lstm_autoencoder[normal_val_loss]` (test curve 1.000; detection 1.000, 0.994 fresh, at 1.26 pages/day with 1.7% of normal time in alarm). Here validation cannot separate them.
+- **smd / time_based**: best without a network is `naive_residual` (test curve 0.553; detection 0.508, 0.436 fresh, at 1.57 pages/day with 5.9% of normal time in alarm); the best learned detector is `conv_autoencoder[s0]+naive_residual` (test curve 0.621; detection 0.594, 0.523 fresh, at 1.65 pages/day with 6.1% of normal time in alarm). Here validation prefers the learned detector (+0.077 curve area).
+- **smd / held_out_series**: best without a network is `ewma_residual` (test curve 0.534; detection 0.713, 0.554 fresh, at 4.22 pages/day with 14.8% of normal time in alarm); the best learned detector is `conv_autoencoder[s2]+naive_residual` (test curve 0.599; detection 0.673, 0.574 fresh, at 2.94 pages/day with 9.9% of normal time in alarm). Here validation prefers `ewma_residual` (-0.020 curve area).
+- **synthetic / time_based**: best without a network is `window_spread` (test curve 1.000; detection 1.000, 0.984 fresh, at 0.78 pages/day with 0.9% of normal time in alarm); the best learned detector is `conv_autoencoder[s0]` (test curve 1.000; detection 1.000, 0.979 fresh, at 1.04 pages/day with 1.6% of normal time in alarm). Here validation cannot separate them.
+- **synthetic / held_out_series**: best without a network is `window_spread` (test curve 1.000; detection 1.000, 0.989 fresh, at 0.83 pages/day with 1.0% of normal time in alarm); the best learned detector is `conv_autoencoder[s0]+naive_residual` (test curve 1.000; detection 1.000, 0.956 fresh, at 1.05 pages/day with 3.3% of normal time in alarm). Here validation cannot separate them.
 
 ### Standing alarms
 
@@ -62,9 +62,35 @@ rate overstates what a pager would have told anyone:
 - smd/time_based `lstm_autoencoder[normal_val_loss]`: 18% of detections pre-alarmed; worst machine in alarm 77% of the time
 - smd/time_based `lstm_autoencoder[val_pr_auc]`: 18% of detections pre-alarmed; worst machine in alarm 77% of the time
 - smd/time_based `lstm_autoencoder[mixed_val_loss]`: 18% of detections pre-alarmed; worst machine in alarm 77% of the time
+- smd/time_based `conv_autoencoder[s0]`: 11% of detections pre-alarmed; worst machine in alarm 79% of the time
+- smd/time_based `conv_autoencoder[s0]+naive_residual`: 12% of detections pre-alarmed; worst machine in alarm 68% of the time
+- smd/time_based `conv_autoencoder[s1]`: 9% of detections pre-alarmed; worst machine in alarm 79% of the time
+- smd/time_based `conv_autoencoder[s1]+naive_residual`: 13% of detections pre-alarmed; worst machine in alarm 69% of the time
+- smd/time_based `conv_autoencoder[s2]`: 8% of detections pre-alarmed; worst machine in alarm 78% of the time
+- smd/time_based `conv_autoencoder[s2]+naive_residual`: 13% of detections pre-alarmed; worst machine in alarm 67% of the time
 - smd/held_out_series `window_spread`: 20% of detections pre-alarmed; worst machine in alarm 100% of the time
 - smd/held_out_series `ewma_residual`: 22% of detections pre-alarmed; worst machine in alarm 70% of the time
 - smd/held_out_series `naive_residual`: 19% of detections pre-alarmed; worst machine in alarm 60% of the time
+- smd/held_out_series `conv_autoencoder[s0]`: 27% of detections pre-alarmed; worst machine in alarm 46% of the time
+- smd/held_out_series `conv_autoencoder[s1]`: 26% of detections pre-alarmed; worst machine in alarm 44% of the time
+- smd/held_out_series `conv_autoencoder[s2]`: 22% of detections pre-alarmed; worst machine in alarm 44% of the time
+
+### Across seeds
+
+Trained detectors were trained once per seed; mean ± standard deviation over seeds.
+*Δ above zero* counts the seeds whose paired difference against
+`window_spread` has a 95% interval entirely above zero.
+
+| Split | Detector | Seeds | Test curve | Detection | Pages/day | Δ above zero |
+|---|---|---:|---:|---:|---:|---:|
+| smd/held_out_series | `conv_autoencoder` | 3 | 0.520 ± 0.001 | 0.657 ± 0.006 | 3.565 ± 0.147 | 0 of 3 |
+| smd/held_out_series | `conv_autoencoder+naive_residual` | 3 | 0.600 ± 0.002 | 0.660 ± 0.015 | 2.726 ± 0.194 | 1 of 3 |
+| smd/time_based | `conv_autoencoder` | 3 | 0.569 ± 0.000 | 0.579 ± 0.013 | 1.809 ± 0.110 | 3 of 3 |
+| smd/time_based | `conv_autoencoder+naive_residual` | 3 | 0.621 ± 0.002 | 0.592 ± 0.003 | 1.702 ± 0.044 | 3 of 3 |
+| synthetic/held_out_series | `conv_autoencoder` | 3 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.103 ± 0.035 | 0 of 3 |
+| synthetic/held_out_series | `conv_autoencoder+naive_residual` | 3 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.056 ± 0.010 | 0 of 3 |
+| synthetic/time_based | `conv_autoencoder` | 3 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.072 ± 0.034 | 0 of 3 |
+| synthetic/time_based | `conv_autoencoder+naive_residual` | 3 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.235 ± 0.053 | 0 of 3 |
 
 ### Checkpoint selection
 
@@ -88,6 +114,12 @@ anomaly rate staying low.
 
 | Detector | Curve | Detection | 95% CI | Fresh | Minutes to detect | Pages/day | Episodes/day | In alarm | Δ vs incumbent | PR-AUC |
 |---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|
+| conv_autoencoder[s2]+naive_residual | 0.623 | 0.594 | [0.53, 0.66] | 0.518 | 9.0 | 1.72 | 1.08 | 6.2% | +0.096 [+0.056, +0.142] | 0.440 |
+| conv_autoencoder[s0]+naive_residual | 0.621 | 0.594 | [0.53, 0.66] | 0.523 | 9.0 | 1.65 | 0.99 | 6.1% | +0.096 [+0.056, +0.142] | 0.442 |
+| conv_autoencoder[s1]+naive_residual | 0.618 | 0.589 | [0.52, 0.65] | 0.513 | 9.0 | 1.74 | 1.03 | 6.3% | +0.091 [+0.051, +0.137] | 0.440 |
+| conv_autoencoder[s0] | 0.569 | 0.564 | [0.49, 0.63] | 0.502 | 10.0 | 1.73 | 0.97 | 5.2% | +0.066 [+0.015, +0.117] | 0.387 |
+| conv_autoencoder[s2] | 0.569 | 0.589 | [0.52, 0.65] | 0.543 | 11.0 | 1.76 | 1.01 | 5.4% | +0.091 [+0.041, +0.147] | 0.383 |
+| conv_autoencoder[s1] | 0.568 | 0.584 | [0.51, 0.65] | 0.533 | 10.0 | 1.94 | 1.12 | 5.8% | +0.086 [+0.035, +0.137] | 0.380 |
 | naive_residual | 0.553 | 0.508 | [0.44, 0.58] | 0.436 | 8.0 | 1.57 | 1.16 | 5.9% | +0.010 [-0.035, +0.056] | 0.379 |
 | max_deviation | 0.543 | 0.508 | [0.44, 0.58] | 0.421 | 8.0 | 1.82 | 0.99 | 6.8% | +0.010 [-0.030, +0.051] | 0.381 |
 | ewma_residual | 0.539 | 0.502 | [0.44, 0.57] | 0.431 | 8.0 | 1.70 | 1.19 | 6.2% | +0.005 [-0.041, +0.051] | 0.378 |
@@ -103,9 +135,15 @@ anomaly rate staying low.
 
 | Detector | Curve | Detection | 95% CI | Fresh | Minutes to detect | Pages/day | Episodes/day | In alarm | Δ vs incumbent | PR-AUC |
 |---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|
+| conv_autoencoder[s1]+naive_residual | 0.603 | 0.663 | [0.56, 0.75] | 0.564 | 10.0 | 2.67 | 1.63 | 8.9% | +0.059 [+0.000, +0.119] | 0.349 |
+| conv_autoencoder[s0]+naive_residual | 0.600 | 0.644 | [0.54, 0.73] | 0.554 | 10.0 | 2.56 | 1.50 | 8.8% | +0.040 [-0.020, +0.109] | 0.349 |
+| conv_autoencoder[s2]+naive_residual | 0.599 | 0.673 | [0.58, 0.76] | 0.574 | 10.0 | 2.94 | 1.75 | 9.9% | +0.069 [+0.010, +0.139] | 0.347 |
 | max_deviation | 0.555 | 0.376 | [0.29, 0.48] | 0.337 | 7.5 | 1.09 | 0.76 | 3.6% | -0.228 [-0.317, -0.148] | 0.285 |
 | naive_residual | 0.549 | 0.683 | [0.58, 0.77] | 0.554 | 9.0 | 3.74 | 1.95 | 13.8% | +0.079 [+0.000, +0.158] | 0.279 |
 | ewma_residual | 0.534 | 0.713 | [0.62, 0.80] | 0.554 | 9.0 | 4.22 | 2.19 | 14.8% | +0.109 [+0.030, +0.178] | 0.276 |
+| conv_autoencoder[s0] | 0.522 | 0.653 | [0.56, 0.74] | 0.475 | 10.0 | 3.47 | 1.81 | 11.3% | +0.050 [-0.040, +0.139] | 0.314 |
+| conv_autoencoder[s1] | 0.520 | 0.653 | [0.56, 0.74] | 0.485 | 10.5 | 3.49 | 1.78 | 11.5% | +0.050 [-0.040, +0.139] | 0.315 |
+| conv_autoencoder[s2] | 0.519 | 0.663 | [0.57, 0.75] | 0.515 | 10.0 | 3.73 | 1.95 | 12.1% | +0.059 [-0.030, +0.148] | 0.315 |
 | window_spread | 0.454 | 0.604 | [0.51, 0.69] | 0.485 | 10.0 | 4.04 | 1.11 | 15.6% | — | 0.248 |
 | lstm_autoencoder[normal_val_loss] | 0.417 | 0.188 | [0.11, 0.26] | 0.188 | 15.0 | 0.02 | 0.02 | 0.0% | -0.416 [-0.515, -0.317] | 0.242 |
 | lstm_autoencoder[val_pr_auc] | 0.417 | 0.188 | [0.11, 0.26] | 0.188 | 15.0 | 0.02 | 0.02 | 0.0% | -0.416 [-0.515, -0.317] | 0.246 |
@@ -122,6 +160,12 @@ anomaly rate staying low.
 | lstm_autoencoder[normal_val_loss] | 1.000 | 1.000 | [1.00, 1.00] | 0.989 | 16.0 | 0.95 | 0.95 | 1.1% | +0.000 [+0.000, +0.000] | 0.948 |
 | lstm_autoencoder[val_pr_auc] | 1.000 | 1.000 | [1.00, 1.00] | 0.984 | 16.0 | 0.97 | 0.96 | 1.1% | +0.000 [+0.000, +0.000] | 0.949 |
 | lstm_autoencoder[mixed_val_loss] | 1.000 | 1.000 | [1.00, 1.00] | 0.989 | 17.0 | 1.10 | 1.10 | 1.3% | +0.000 [+0.000, +0.000] | 0.947 |
+| conv_autoencoder[s0] | 1.000 | 1.000 | [1.00, 1.00] | 0.979 | 13.5 | 1.04 | 1.04 | 1.6% | +0.000 [+0.000, +0.000] | 0.881 |
+| conv_autoencoder[s0]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.962 | 15.0 | 1.25 | 1.25 | 3.7% | +0.000 [+0.000, +0.000] | 0.867 |
+| conv_autoencoder[s1] | 1.000 | 1.000 | [1.00, 1.00] | 0.979 | 13.5 | 1.06 | 1.06 | 1.6% | +0.000 [+0.000, +0.000] | 0.882 |
+| conv_autoencoder[s1]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.962 | 15.0 | 1.28 | 1.28 | 3.8% | +0.000 [+0.000, +0.000] | 0.868 |
+| conv_autoencoder[s2] | 1.000 | 1.000 | [1.00, 1.00] | 0.979 | 13.0 | 1.11 | 1.11 | 1.6% | +0.000 [+0.000, +0.000] | 0.880 |
+| conv_autoencoder[s2]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.968 | 15.0 | 1.18 | 1.18 | 3.6% | +0.000 [+0.000, +0.000] | 0.866 |
 | isolation_forest | 0.996 | 0.989 | [0.97, 1.00] | 0.968 | 22.5 | 0.84 | 0.75 | 1.8% | -0.011 [-0.027, +0.000] | 0.903 |
 | max_deviation | 0.866 | 0.833 | [0.77, 0.89] | 0.806 | 27.0 | 0.65 | 0.45 | 2.4% | -0.167 [-0.226, -0.113] | 0.789 |
 | ewma_residual | 0.830 | 0.812 | [0.75, 0.87] | 0.801 | 28.0 | 1.37 | 1.35 | 2.2% | -0.188 [-0.247, -0.134] | 0.648 |
@@ -137,6 +181,12 @@ anomaly rate staying low.
 | lstm_autoencoder[normal_val_loss] | 1.000 | 1.000 | [1.00, 1.00] | 0.994 | 15.0 | 1.26 | 1.16 | 1.7% | +0.000 [+0.000, +0.000] | 0.941 |
 | lstm_autoencoder[val_pr_auc] | 1.000 | 1.000 | [1.00, 1.00] | 0.994 | 15.0 | 1.26 | 1.16 | 1.7% | +0.000 [+0.000, +0.000] | 0.941 |
 | lstm_autoencoder[mixed_val_loss] | 1.000 | 1.000 | [1.00, 1.00] | 0.994 | 15.0 | 1.26 | 1.16 | 1.7% | +0.000 [+0.000, +0.000] | 0.941 |
+| conv_autoencoder[s0] | 1.000 | 1.000 | [1.00, 1.00] | 0.972 | 13.5 | 1.09 | 1.09 | 1.5% | +0.000 [+0.000, +0.000] | 0.879 |
+| conv_autoencoder[s0]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.956 | 13.0 | 1.05 | 1.05 | 3.3% | +0.000 [+0.000, +0.000] | 0.867 |
+| conv_autoencoder[s1] | 1.000 | 1.000 | [1.00, 1.00] | 0.972 | 13.0 | 1.14 | 1.14 | 1.5% | +0.000 [+0.000, +0.000] | 0.881 |
+| conv_autoencoder[s1]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.961 | 13.0 | 1.05 | 1.05 | 3.3% | +0.000 [+0.000, +0.000] | 0.870 |
+| conv_autoencoder[s2] | 1.000 | 1.000 | [1.00, 1.00] | 0.972 | 13.0 | 1.08 | 1.08 | 1.4% | +0.000 [+0.000, +0.000] | 0.881 |
+| conv_autoencoder[s2]+naive_residual | 1.000 | 1.000 | [1.00, 1.00] | 0.956 | 13.0 | 1.07 | 1.07 | 3.2% | +0.000 [+0.000, +0.000] | 0.869 |
 | isolation_forest | 0.971 | 0.944 | [0.91, 0.98] | 0.911 | 25.0 | 1.14 | 0.88 | 2.5% | -0.056 [-0.094, -0.022] | 0.823 |
 | ewma_residual | 0.843 | 0.783 | [0.72, 0.84] | 0.783 | 25.0 | 0.84 | 0.84 | 1.3% | -0.217 [-0.278, -0.161] | 0.625 |
 | max_deviation | 0.842 | 0.817 | [0.76, 0.87] | 0.794 | 28.0 | 0.87 | 0.41 | 3.5% | -0.183 [-0.244, -0.128] | 0.754 |
