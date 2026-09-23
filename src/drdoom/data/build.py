@@ -26,8 +26,14 @@ import numpy as np
 
 from drdoom.config import get_settings
 from drdoom.data import card, smd, store, synthetic, windows
-from drdoom.data.schema import MetricSeries
-from drdoom.data.splits import SplitResult, held_out_series_split, slice_series, time_based_split
+from drdoom.data.schema import NORMAL_EVENT_ID, MetricSeries
+from drdoom.data.splits import (
+    SplitResult,
+    held_out_series_split,
+    nearest_normal_cut,
+    slice_series,
+    time_based_split,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +81,37 @@ def build_synthetic_splits(config: BuildConfig) -> SplitResult:
     return held_out_series_split(series, config.train_frac, config.val_frac, seed=config.seed)
 
 
+def halve(labelled: MetricSeries) -> tuple[MetricSeries, MetricSeries]:
+    """Cut a labelled period in two at the normal timestep nearest its midpoint.
+
+    Cutting at the exact midpoint held only because no incident happens to straddle it
+    today. An incident that did would be dropped from both halves while its timesteps
+    stayed labelled anomalous, and every window over them would count as a false alarm.
+    """
+    midpoint = nearest_normal_cut(labelled.point_labels, labelled.n_timesteps // 2)
+    return (
+        slice_series(labelled, 0, midpoint),
+        slice_series(labelled, midpoint, labelled.n_timesteps),
+    )
+
+
+def orphaned_timesteps(series: MetricSeries) -> int:
+    """Anomalous timesteps that belong to no event, which a cut through an incident leaves."""
+    return int(((series.point_labels == 1) & (series.event_ids == NORMAL_EVENT_ID)).sum())
+
+
+def check_no_orphans(result: SplitResult) -> None:
+    """Refuse to write splits in which an incident was cut in two."""
+    for name, split in result.as_dict().items():
+        for item in split:
+            orphans = orphaned_timesteps(item)
+            if orphans:
+                raise ValueError(
+                    f"{item.series_id} in {name} has {orphans} anomalous timesteps outside "
+                    "any event; a split boundary cut through an incident"
+                )
+
+
 def build_smd_splits(config: BuildConfig) -> SplitResult:
     """Compose splits from the dataset's own anomaly-free and labelled periods."""
     loaded = smd.load_all()
@@ -84,9 +121,9 @@ def build_smd_splits(config: BuildConfig) -> SplitResult:
         val: list[MetricSeries] = []
         test: list[MetricSeries] = []
         for _, labelled in loaded.values():
-            midpoint = labelled.n_timesteps // 2
-            val.append(slice_series(labelled, 0, midpoint))
-            test.append(slice_series(labelled, midpoint, labelled.n_timesteps))
+            first, second = halve(labelled)
+            val.append(first)
+            test.append(second)
         return SplitResult(strategy=config.strategy, train=train, val=val, test=test)
 
     machines = sorted(loaded)
@@ -123,6 +160,7 @@ def build(config: BuildConfig) -> dict:
     """Produce the split datasets, the fitted scaler and the manifest."""
     logger.info("building %s with the %s strategy", config.source, config.strategy)
     result = build_smd_splits(config) if config.source == "smd" else build_synthetic_splits(config)
+    check_no_orphans(result)
 
     output = config.output_dir
     output.mkdir(parents=True, exist_ok=True)

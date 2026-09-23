@@ -22,7 +22,7 @@ authorises it — with the decision written to an append-only audit log.
 |---|---|
 | Project foundations | Done |
 | Data pipeline | Done |
-| Anomaly detection | Done |
+| Anomaly detection | Re-measured; the served detector is being replaced |
 | Root-cause classification | Done |
 | Retrieval | Done |
 | Agents and model layer | Done |
@@ -50,21 +50,35 @@ alongside the simple baselines it is measured against. Full tables in
 
 ### Detection
 
-Baselines were built before the network so the comparison could actually be made, and
-thresholds are chosen on validation against a false alarm budget of one page per
-series-day, then applied unchanged to test.
+Baselines were built before the network so the comparison could actually be made.
+Thresholds are chosen on validation against a budget of one page per series-day and
+applied unchanged to test, and pages are counted as a person receives them: an alarm that
+stays up pages again every hour.
 
-| Dataset | Best detector | Detection rate | Minutes to detect | Alarms/day |
-|---|---|---:|---:|---:|
-| Real, unseen machines | `ewma_residual` | 0.752 | 8.5 | 1.65 |
-| Real, future incidents | `window_spread` | 0.782 | 8.0 | 0.92 |
-| Synthetic, unseen services | `lstm_autoencoder` | 1.000 | 15.0 | 1.16 |
+An earlier version counted one page per alarm however long it lasted. That rewarded a
+detector that never switches off — on some machines `window_spread` was in alarm all of
+the time — and it made `window_spread` look like the best detector on real data, at 0.782
+detection. Counted properly it detects 0.497 and ranks last of the useful detectors. The
+earlier claim that the autoencoder "loses to a one-line statistic" came from the same
+counting and does not hold.
 
-The autoencoder wins on synthetic data and **loses to a one-line statistic on real
-data**, where it trails the best baseline by 0.15 to 0.20 detection rate while raising
-more false alarms. That result is published rather than buried: it is the reason the
-baselines exist, and the reason the shipped default on real telemetry is not the
-neural network.
+Detectors are ranked by **curve area**: the mean, over budgets from half a page to four
+pages per series-day, of the best detection each budget allows. Real data, future
+incidents on known machines (197 incidents):
+
+| Detector | Curve area | Detection | Pages/day on test | Normal time in alarm |
+|---|---:|---:|---:|---:|
+| `naive_residual` | 0.553 | 0.508 | 1.57 | 5.9% |
+| `lstm_autoencoder` | 0.531 | 0.564 | 2.04 | 6.8% |
+| `window_spread` (currently served) | 0.489 | 0.497 | 2.08 | 7.3% |
+
+On unseen machines `ewma_residual` leads (curve 0.534), `window_spread` reaches 0.454, and
+the autoencoder 0.417. On synthetic data every strong detector reaches 1.000.
+
+Two things the table does not hide. No detector keeps to its budget on test: a threshold
+that pages once a day on validation pages 1.6 to 2.1 times on future incidents and up to
+4.2 on unseen machines. And the service still runs `window_spread`; replacing it is the
+next change, judged on these curves.
 
 Results here are not point-adjusted. Much of the published work on this benchmark
 credits a whole anomaly segment as detected when any single point inside it fires,
