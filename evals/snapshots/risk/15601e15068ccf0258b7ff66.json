@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 375,
+  "output_tokens": 234,
+  "text": "{\n  \"risk_level\": \"high\",\n  \"worst_case\": \"The payments service becomes unavailable during the restart, causing transaction failures and potential loss of in\u2011flight payment data.\",\n  \"reasons\": [\n    \"Pod restart can interrupt live traffic and drop in\u2011flight requests\",\n    \"No rollback or graceful shutdown steps are defined\",\n    \"Payments service is likely stateful and critical, so downtime can cause data loss\"\n  ]\n}"
+}

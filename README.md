@@ -271,8 +271,9 @@ python -m drdoom.evals.run --record     # refresh them against a live provider
 
 Risk ratings are scored separately, against sixteen hand-labelled plans, for how often a
 plan ends up rated below what it deserves. The author's rating alone under-rates 8 of them;
-adding the policy floor leaves 4, each of which only an assessor can catch. The row with the
-assessor is measured once its answers are recorded
+adding the policy floor leaves 4, each of which only an assessor can catch. With the
+assessor's answers recorded, all three together under-rate none of the sixteen, at the cost
+of 7 plans rated above what they needed
 ([docs/risk-results.md](docs/risk-results.md)).
 
 ```bash

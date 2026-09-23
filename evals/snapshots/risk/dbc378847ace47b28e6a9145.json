@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 401,
+  "output_tokens": 242,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"Scaling out adds more DB connections, exceeding the database's max connections and causing a full service outage\",\"reasons\":[\"increases total DB connections\",\"may exceed database connection limit\",\"could trigger cascading failures across API replicas\"]}"
+}

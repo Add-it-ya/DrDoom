@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 397,
+  "output_tokens": 380,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"Draining node-7 evicts the sole session\u2011store replica, causing session loss and service outage.\",\"reasons\":[\"Single point of failure for session store\",\"Pod eviction may exceed cluster capacity\",\"Potential data loss if store not persisted\"]}"
+}
