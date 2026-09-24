@@ -152,7 +152,8 @@ def test_recording_saves_what_the_provider_said(tmp_path) -> None:
     RecordingProvider(inner, store, note="eval").complete([user("question")])
 
     assert len(store) == 1
-    saved = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    (path,) = [p for p in tmp_path.glob("*.json") if p.name != SnapshotStore.MANIFEST]
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["text"] == "recorded answer"
     assert saved["note"] == "eval"
 
