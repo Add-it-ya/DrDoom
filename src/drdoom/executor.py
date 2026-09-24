@@ -12,10 +12,12 @@ fails, so approving a rolling restart cannot be turned into approval for deletin
 volume. This is the substitution attack the gate exists to prevent, and it is a type error
 here rather than a review comment.
 
-**Only recognised actions run.** The model writes its action as prose, and prose is not a
-command. Actions are matched against a small catalogue; anything unrecognised is refused
-and reported as refused. A system arranged around not trusting the model should not end by
-executing whatever sentence it produced.
+**Only a named catalogue action runs.** The model writes its action as prose for the
+human, and prose is not a command. What runs is read from ``RemediationPlan.action``, a
+field that can only name an entry in a small catalogue or nothing. The prose is never
+searched for keywords: a substring match reads "never roll back" as a rollback. A plan that
+names no action is refused and reported as refused. A system arranged around not trusting
+the model should not end by executing its own reading of whatever sentence it produced.
 
 Nothing here touches a real cluster. Commands are rendered and returned, never run.
 """
@@ -25,11 +27,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from drdoom.agents.schemas import RemediationPlan
+from drdoom.agents.schemas import RemediationPlan, RiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -68,44 +69,54 @@ class ApprovalToken:
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """One action the system knows how to perform."""
+    """One action the system knows how to perform, and the least risk it can carry.
+
+    ``risk_floor`` is policy, not a prediction. No rating from a model can take a plan
+    that runs this action below it, so the floor is the one rating a poisoned document
+    or a flattering self-assessment cannot move.
+    """
 
     kind: str
-    keywords: tuple[str, ...]
     template: str
     description: str
+    risk_floor: RiskLevel
 
 
 CATALOGUE: tuple[ActionSpec, ...] = (
     ActionSpec(
         kind="rollout_restart",
-        keywords=("rolling restart", "rollout restart", "restart the pods", "recreate the pods"),
         template="kubectl rollout restart deployment/{target}",
         description="Recreate the pods of a deployment without changing its image",
+        # Every pod is replaced; a service with one replica or a slow start drops traffic.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="rollout_undo",
-        keywords=("roll back", "rollback", "previous version", "undo the deploy"),
         template="kubectl rollout undo deployment/{target}",
         description="Return a deployment to its previous revision",
+        # The previous revision may not match today's schema, config or dependencies.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="scale_out",
-        keywords=("scale up", "scale out", "add replicas", "increase replicas"),
         template="kubectl scale deployment/{target} --replicas=6",
         description="Raise the replica count of a deployment",
+        # Adds capacity and removes none; undone by scaling back.
+        risk_floor="low",
     ),
     ActionSpec(
         kind="set_memory_limit",
-        keywords=("memory limit", "limit memory", "memory cap"),
         template="kubectl set resources deployment/{target} --limits=memory=2Gi",
         description="Apply a memory limit to a deployment",
+        # A limit set too low turns a leak into a crash loop, and it restarts every pod.
+        risk_floor="medium",
     ),
     ActionSpec(
         kind="cordon_node",
-        keywords=("cordon", "drain the node", "drain node"),
         template="kubectl drain node/{target} --ignore-daemonsets",
         description="Move workloads off a node for maintenance",
+        # Evicts everything on the node at once, including workloads unrelated to the incident.
+        risk_floor="high",
     ),
 )
 
@@ -136,13 +147,19 @@ class ExecutionResult:
         return f"{self.command} (dry run)"
 
 
-def match_action(text: str) -> ActionSpec | None:
-    """Find the catalogue entry an action describes, if any."""
-    lowered = re.sub(r"\s+", " ", text.lower())
-    return next(
-        (spec for spec in CATALOGUE if any(keyword in lowered for keyword in spec.keywords)),
-        None,
-    )
+def action_spec(kind: str | None) -> ActionSpec | None:
+    """The catalogue entry a plan names, if it names one."""
+    return next((spec for spec in CATALOGUE if spec.kind == kind), None) if kind else None
+
+
+def risk_floor(kind: str | None) -> RiskLevel:
+    """The least risk a plan naming this action can be rated.
+
+    A plan that names nothing runs nothing, so its floor is low; the other ratings still
+    decide whether a human reads it.
+    """
+    spec = action_spec(kind)
+    return spec.risk_floor if spec else "low"
 
 
 class DryRunExecutor:
@@ -150,6 +167,15 @@ class DryRunExecutor:
 
     def __init__(self, target: str = DEFAULT_TARGET) -> None:
         self.target = target
+
+    def preview(self, plan: RemediationPlan) -> str | None:
+        """The exact command approving this plan would run, or None if it runs nothing.
+
+        Shown at the gate so a human approves a command, not a sentence. It is the same
+        rendering ``execute`` uses, so the two cannot disagree.
+        """
+        spec = action_spec(plan.action)
+        return spec.template.format(target=self.target) if spec else None
 
     def execute(self, plan: RemediationPlan, token: ApprovalToken | None) -> ExecutionResult:
         """Run an approved plan, or refuse and say why.
@@ -167,16 +193,16 @@ class DryRunExecutor:
                 f"approved {token.plan_hash[:12]}, asked to run {plan_hash(plan)[:12]}"
             )
 
-        spec = match_action(plan.immediate_action)
+        spec = action_spec(plan.action)
         if spec is None:
-            logger.warning("execution refused: unrecognised action %r", plan.immediate_action)
+            logger.warning("execution refused: plan names no catalogue action (%r)", plan.action)
             return ExecutionResult(
                 executed=False,
                 kind="unrecognised",
-                detail=f"no known action matches {plan.immediate_action!r}",
+                detail="the plan names no catalogue action, so there is nothing to run",
             )
 
-        command = spec.template.format(target=self.target)
+        command = self.preview(plan)
         logger.info("executing (dry run) %s for %s", spec.kind, token.principal)
         return ExecutionResult(
             executed=True, kind=spec.kind, command=command, detail=spec.description

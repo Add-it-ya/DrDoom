@@ -16,37 +16,83 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import Investigator, checkpoint_path
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import Classifier, TriageAgent, window_to_series
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
 from drdoom.data import synthetic
 from drdoom.data.windows import Scaler, build_index
 from drdoom.detect.base import Detector
-from drdoom.detect.baselines import WindowSpread
+from drdoom.detect.baselines import NaiveResidual, WindowSpread
+from drdoom.detect.conv_autoencoder import ConvAutoencoderDetector
+from drdoom.detect.evaluate import select_threshold
+from drdoom.detect.fusion import MaxFusion
 from drdoom.executor import DryRunExecutor
 from drdoom.llm.base import LLMProvider
-from drdoom.llm.factory import build_provider
+from drdoom.llm.factory import build_provider_or_unavailable
 from drdoom.rag import corpus
 from drdoom.rag.index import BM25Index, DenseIndex, HybridRetriever, Retriever
 from drdoom.rag.ingest import chunk_all
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_THRESHOLD = 2.5
 WINDOW = 60
 
 
-def build_detector() -> tuple[Detector, float, list[str]]:
-    """A baseline fitted on generated normal traffic.
+# Training windows for the conv autoencoder overlap more than the baseline needs: it has
+# weights to fit, and generated traffic is the only data the service has.
+TRAIN_STRIDE = 5
+DETECTOR_SEED = 0
 
-    Measurement on the real dataset favoured a window statistic over the autoencoder, so
-    the default here is that statistic rather than the more impressive option.
+
+def fit_detector(kind: str, series: list, scaler: Scaler) -> Detector:
+    """Fit the configured detector on generated normal traffic."""
+    baseline_index = build_index(series, WINDOW, stride=20).normal_only()
+    if kind == "window_spread":
+        return WindowSpread().fit(series, baseline_index, scaler)
+
+    dense_index = build_index(series, WINDOW, stride=TRAIN_STRIDE).normal_only()
+    conv = ConvAutoencoderDetector(seed=DETECTOR_SEED).fit(series, dense_index, scaler)
+    if kind == "conv":
+        return conv
+    naive = NaiveResidual().fit(series, baseline_index, scaler)
+    return MaxFusion([conv, naive]).fit(series, baseline_index, scaler)
+
+
+def build_detector(kind: str | None = None) -> tuple[Detector, float, list[str]]:
+    """The configured detector fitted on generated normal traffic, with a measured threshold.
+
+    ``DRDOOM_DETECTOR`` chooses it. The default is the centred conv autoencoder, which
+    measured better than ``window_spread`` once pages were counted as a person receives
+    them (docs/detection-results.md). It is trained here, in a few seconds, with a fixed
+    seed, so every start builds the same detector and the same threshold. If training
+    fails for any reason the service falls back to ``window_spread`` and says so, rather
+    than refusing to start.
+
+    The threshold is chosen the way every published result chooses one: on separately
+    generated validation traffic, as the most sensitive value that stays inside the false
+    alarm budget, with a standing alarm paging again every hour. A number typed in by hand
+    is expressed in the units of one particular scaler, and quietly stops meaning anything
+    when that scaler changes.
     """
+    kind = kind or get_settings().detector
     series = synthetic.generate(n_scenarios=6, days=2, seed=7)
-    normal = build_index(series, WINDOW, stride=20).normal_only()
-    detector = WindowSpread()
-    detector.fit(series, normal, Scaler.fit(series))
-    return detector, DEFAULT_THRESHOLD, list(synthetic.FEATURE_NAMES)
+    scaler = Scaler.fit(series)
+    try:
+        detector = fit_detector(kind, series, scaler)
+    except Exception:
+        logger.exception("could not fit the %s detector, falling back to window_spread", kind)
+        detector = fit_detector("window_spread", series, scaler)
+
+    validation = synthetic.generate(n_scenarios=6, days=2, seed=8)
+    index = build_index(validation, WINDOW)
+    threshold = select_threshold(detector.score(validation, index), index, validation)
+    logger.info(
+        "detector %s, threshold %.4f chosen against the false alarm budget",
+        detector.name,
+        threshold,
+    )
+    return detector, threshold, list(synthetic.FEATURE_NAMES)
 
 
 def build_classifier() -> Classifier | None:
@@ -61,7 +107,16 @@ def build_classifier() -> Classifier | None:
         return None
 
 
-def build_retriever(use_dense: bool = False) -> Retriever:
+def build_retriever(use_dense: bool = True) -> Retriever:
+    """The retriever the service runs: BM25 and a learned encoder, fused.
+
+    Fusion is the configuration the retrieval results measured as better than BM25 alone,
+    and the one the evaluation suite scores, so it is also the one that serves requests.
+    ``use_dense=False`` leaves the encoder out, for anywhere its weights cannot be loaded.
+
+    Embedding the corpus takes minutes on a CPU, so the matrix is saved beside the corpus
+    the first time and reused on every start after that.
+    """
     if not corpus.is_downloaded():
         raise RuntimeError(
             "the document corpus is missing; run: python -c "
@@ -72,12 +127,18 @@ def build_retriever(use_dense: bool = False) -> Retriever:
     if not use_dense:
         return lexical
 
-    from drdoom.rag.embed import SentenceTransformerEmbedder
+    from drdoom.rag.embed import SentenceTransformerEmbedder, encode_cached
 
-    return HybridRetriever([lexical, DenseIndex(chunks, SentenceTransformerEmbedder())])
+    embedder = SentenceTransformerEmbedder()
+    matrix = encode_cached(
+        embedder,
+        [chunk.search_text for chunk in chunks],
+        corpus.corpus_dir() / f"embeddings-{embedder.name}.npz",
+    )
+    return HybridRetriever([lexical, DenseIndex(chunks, embedder, matrix=matrix)])
 
 
-def build_service(provider: LLMProvider | None = None, use_dense: bool = False):
+def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     """Wire the whole system together for a real run."""
     from drdoom.agents.graph import make_checkpointer
     from drdoom.api.main import Service
@@ -85,21 +146,38 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = False):
     settings = get_settings()
     detector, threshold, feature_names = build_detector()
     retriever = build_retriever(use_dense=use_dense)
-    model = provider or build_provider(settings.llm_provider)
+    model = provider or build_provider_or_unavailable(settings.llm_provider)
+    reviewer = model
+    if provider is None and (settings.risk_provider or settings.risk_model):
+        reviewer = build_provider_or_unavailable(
+            settings.risk_provider or settings.llm_provider, settings.risk_model
+        )
     audit = AuditLog()
 
     checkpointer, connection = make_checkpointer(checkpoint_path())
 
     investigator = Investigator(
-        TriageAgent(detector, threshold, feature_names, classifier=build_classifier()),
+        TriageAgent(
+            detector,
+            threshold,
+            feature_names,
+            classifier=build_classifier(),
+            window_size=WINDOW,
+        ),
         DiagnosisAgent(retriever, model),
         RemediationAgent(retriever, model),
         ReportingAgent(model),
         checkpointer,
         executor=DryRunExecutor(),
         audit=audit,
+        risk=RiskAssessor(reviewer),
     )
-    logger.info("service ready with provider %s", model.name)
+    logger.info(
+        "service ready with provider %s, risk reviewed by %s/%s",
+        model.name,
+        reviewer.name,
+        reviewer.model,
+    )
     return Service(investigator=investigator, audit=audit, connection=connection)
 
 

@@ -5,8 +5,9 @@ part of the system, and the language layer downstream depends on them being deci
 before it is asked anything.
 
 Both components are injected rather than constructed, so the detector that
-measurement actually favoured can be swapped in without editing this file. On the real
-dataset that was a window statistic, not the autoencoder.
+measurement actually favoured can be swapped in without editing this file. That happened
+once already: a window statistic was served until pages were counted properly, and the
+centred conv autoencoder replaced it.
 """
 
 from __future__ import annotations
@@ -101,15 +102,45 @@ class TriageAgent:
         threshold: float,
         feature_names: list[str],
         classifier: Classifier | None = None,
+        window_size: int | None = None,
     ) -> None:
         self.detector = detector
         self.threshold = threshold
         self.feature_names = list(feature_names)
         self.classifier = classifier
+        self.window_size = window_size
+
+    def check(self, window: np.ndarray) -> None:
+        """Refuse a window the threshold was not calibrated for.
+
+        A threshold is chosen for one window length and one metric order. A score over two
+        rows or five hundred is a different statistic, and a missing value is not a quiet
+        one: NaN compares false against the threshold, which would read as an incident.
+        """
+        if window.ndim != 2:
+            raise ValueError(f"expected a (timesteps, metrics) window, got shape {window.shape}")
+        rows, width = window.shape
+        if width != len(self.feature_names):
+            raise ValueError(
+                f"expected {len(self.feature_names)} metrics "
+                f"({', '.join(self.feature_names)}), got {width}"
+            )
+        if self.window_size is not None and rows != self.window_size:
+            raise ValueError(f"expected {self.window_size} timesteps, got {rows}")
+        bad = np.argwhere(~np.isfinite(window))
+        if len(bad):
+            row, column = (int(v) for v in bad[0])
+            raise ValueError(
+                f"{len(bad)} values are missing or infinite, first at timestep {row}, "
+                f"metric {self.feature_names[column]!r}"
+            )
 
     def run(self, window: np.ndarray) -> TriageResult:
+        self.check(window)
         series, index = window_to_series(window, self.feature_names)
         score = float(self.detector.score(series, index)[0])
+        if not np.isfinite(score):
+            raise ValueError(f"the detector produced a non-finite score ({score})")
 
         if score < self.threshold:
             return TriageResult(is_anomaly=False, score=score, threshold=self.threshold)

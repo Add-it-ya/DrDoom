@@ -152,7 +152,8 @@ def test_recording_saves_what_the_provider_said(tmp_path) -> None:
     RecordingProvider(inner, store, note="eval").complete([user("question")])
 
     assert len(store) == 1
-    saved = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    (path,) = [p for p in tmp_path.glob("*.json") if p.name != SnapshotStore.MANIFEST]
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["text"] == "recorded answer"
     assert saved["note"] == "eval"
 
@@ -290,3 +291,31 @@ def test_replay_without_a_manifest_still_reports_a_miss(tmp_path) -> None:
 
     with pytest.raises(LLMUnavailableError):
         provider.complete([user("never recorded")])
+
+
+def test_an_unparseable_diagnosis_is_scored_as_a_parse_failure_not_a_crash() -> None:
+    from drdoom.agents.diagnosis import DiagnosisAgent
+    from drdoom.evals.run import run_case
+    from drdoom.rag.corpus import Document
+    from drdoom.rag.index import BM25Index
+    from drdoom.rag.ingest import chunk_all
+
+    document = Document(
+        doc_id="k8s:memory",
+        source="kubernetes",
+        path="memory.md",
+        title="Assign Memory Resources",
+        text="## Limits\n" + "Set a memory limit on the container. " * 10,
+        url="https://example.invalid/memory",
+        licence="CC-BY-4.0",
+    )
+    agent = DiagnosisAgent(BM25Index(chunk_all([document])), StubProvider(default="no json"))
+    case = {"id": "c1", "symptoms": "memory climbing", "relevant": ["k8s:memory"]}
+
+    result = run_case(agent, case)
+
+    assert result.parsed is False
+    assert result.degraded is True
+    assert result.groundedness == 0.0
+    assert result.tokens > 0
+    assert summarise([result], {"hit_at_5": 1.0, "mrr": 1.0, "queries": 1})["parse_success"] == 0

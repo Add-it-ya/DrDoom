@@ -125,8 +125,9 @@ def prepare(config: ClassifierConfig) -> Prepared:
     if config.source == "smd":
         # Archetypes are a taxonomy derived from the annotation file, not from metric
         # values, so defining them over all events does not hand the model any signal it
-        # could read off its inputs. With 325 incidents in total there is not enough data
-        # to define the taxonomy on a subset and still have it be stable.
+        # could read off its inputs. With a few hundred incidents in total (327 in the
+        # annotation file) there is not enough data to define the taxonomy on a subset and
+        # still have it be stable.
         derived = archetype_module.derive(events, smd.N_FEATURES)
         names = tuple(name for name in derived.names if name != archetype_module.OTHER_LABEL)
         lookup = dataset_module.event_labels(series, derived)

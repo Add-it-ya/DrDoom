@@ -12,10 +12,21 @@ thread from where it stopped. Nothing is held in process memory between the two,
 restart, a deploy, or a second worker picking up the request all behave the same. That is
 the property a plain function call cannot offer, and the reason this is a graph at all.
 
+Between writing a plan and asking about it, the plan's risk is decided again. The author's
+rating is one of three: a policy floor for the action it names and an independent
+assessment are taken as well, and the most cautious stands. The plan the gate shows, and
+whose hash an approval carries, is the plan with that final rating, so the rating a human
+approved is part of what they approved. See ``drdoom.agents.risk``.
+
 Approval and rejection lead to different places. An approved plan reaches an executor
 carrying a token issued at the moment of the decision; a rejected one is escalated and
 never reaches the executor at all. Both are written to the audit log, because a review
 needs to see the refusals as much as the actions.
+
+A run that stops partway is reported as ``failed``, never as ``no_incident``. The two
+used to be indistinguishable -- both are a state with no report -- so an incident whose
+diagnosis crashed read the same as a quiet window. What separates them is triage: only a
+window triage cleared is not an incident.
 
 The state is deliberately plain json. A numpy array or a pydantic model in the state would
 serialise inconsistently or not at all; models are validated at the edges and stored as
@@ -41,16 +52,17 @@ from langgraph.types import Command, interrupt
 from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor, highest
 from drdoom.agents.schemas import Citation, Diagnosis, RemediationPlan
 from drdoom.agents.triage import TriageAgent
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings
-from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash
+from drdoom.executor import ApprovalToken, DryRunExecutor, plan_hash, risk_floor
 from drdoom.observability import Counters, Timings, incident_context, timed
 
 logger = logging.getLogger(__name__)
 
-Status = Literal["no_incident", "awaiting_approval", "complete", "rejected"]
+Status = Literal["no_incident", "awaiting_approval", "complete", "rejected", "failed"]
 
 AUTO_APPROVED = "auto_approved"
 APPROVED = "approved_by_human"
@@ -58,6 +70,11 @@ REJECTED = "rejected_by_human"
 
 POLICY_PRINCIPAL = "policy:low_risk"
 UNKNOWN_PRINCIPAL = "unknown"
+
+# What a caller is told when a run stops. The exception itself goes to the log, where the
+# incident id ties it to this run, and not to a client that may be a browser.
+STOPPED_DETAIL = "the investigation stopped at an internal error; the service log has the cause"
+_STOPPED: dict[str, Any] = {}
 
 
 class InvestigationState(TypedDict, total=False):
@@ -72,6 +89,7 @@ class InvestigationState(TypedDict, total=False):
     diagnosis: dict[str, Any]
     citations: list[dict[str, Any]]
     plan: dict[str, Any]
+    risk: dict[str, Any]
     decision: str
     approval: dict[str, Any]
     execution: dict[str, Any]
@@ -142,11 +160,15 @@ class Investigator:
         executor: DryRunExecutor | None = None,
         audit: AuditLog | None = None,
         counters: Counters | None = None,
+        risk: RiskAssessor | None = None,
     ) -> None:
         self.triage = triage
         self.diagnosis = diagnosis
         self.remediation = remediation
         self.reporting = reporting
+        # A separate call, not a separate model, unless one is configured: a fresh context
+        # that never sees the author's rating already removes the anchoring.
+        self.risk = risk or RiskAssessor(remediation.provider)
         self.executor = executor or DryRunExecutor()
         self.audit = audit or AuditLog()
         self.counters = counters or Counters()
@@ -186,7 +208,56 @@ class Investigator:
         outcome = self.remediation.run(
             state["diagnosis"]["summary"], state["triage"].get("root_cause")
         )
-        return {"plan": outcome.plan.model_dump(), **_usage(outcome.completions)}
+        update = {"plan": outcome.plan.model_dump(), **_usage(outcome.completions)}
+        if outcome.degraded:
+            # Set only on failure, so a plan that worked cannot clear a diagnosis that did not.
+            update["degraded"] = True
+        return update
+
+    def _assess_node(self, state: InvestigationState) -> dict:
+        with timed("assess_risk", self._timings(state)):
+            return self._assess(state)
+
+    def _assess(self, state: InvestigationState) -> dict:
+        """Rate the plan again, independently, and keep the most cautious rating."""
+        plan = RemediationPlan.model_validate(state["plan"])
+        author = plan.risk_level
+        floor = risk_floor(plan.action)
+        record: dict[str, Any] = {"author": author, "floor": floor}
+        update: dict[str, Any] = {}
+
+        if author == "high":
+            # Nothing can rate it higher, so there is nothing an assessment could change.
+            record |= {"assessor": None, "assessor_status": "not_needed"}
+            final = author
+        else:
+            outcome = self.risk.run(
+                state["triage"],
+                Diagnosis.model_validate(state["diagnosis"]),
+                plan,
+                self.executor.preview(plan),
+                [Citation.model_validate(item) for item in state.get("citations", [])],
+            )
+            assessment = outcome.assessment
+            record |= {
+                "assessor": assessment.risk_level if assessment else None,
+                "assessor_status": outcome.failure or "assessed",
+                "worst_case": assessment.worst_case if assessment else None,
+                "reasons": list(assessment.reasons) if assessment else [],
+            }
+            final = highest(floor, outcome.level, author)
+            update |= _usage(outcome.completions)
+            if outcome.degraded:
+                update["degraded"] = True
+
+        record["final"] = final
+        if final != author:
+            logger.info("risk raised from %s to %s (floor %s)", author, final, floor)
+        update |= {
+            "plan": plan.model_copy(update={"risk_level": final}).model_dump(),
+            "risk": record,
+        }
+        return update
 
     def _approval_node(self, state: InvestigationState) -> dict:
         """Decide, and on approval mint the token that authorises this exact plan."""
@@ -203,7 +274,10 @@ class Investigator:
             {
                 "question": "Approve this remediation?",
                 "immediate_action": plan.immediate_action,
+                "action": plan.action,
+                "would_run": self.executor.preview(plan),
                 "risk_level": plan.risk_level,
+                "risk": state.get("risk"),
                 "rollback": plan.rollback,
                 "plan_hash": plan_hash(plan),
             }
@@ -236,6 +310,7 @@ class Investigator:
             plan_hash=plan_hash(plan),
             executed=result.executed,
             execution=result.summary,
+            risk=state.get("risk"),
         )
         return {"execution": result.as_dict()}
 
@@ -256,6 +331,7 @@ class Investigator:
             plan_hash=plan_hash(plan),
             executed=False,
             execution="nothing was executed (rejected)",
+            risk=state.get("risk"),
         )
         logger.warning("incident escalated after rejection")
         return {"escalation": message, "execution": {"executed": False, "kind": "rejected"}}
@@ -300,6 +376,7 @@ class Investigator:
         graph.add_node("triage", self._triage_node)
         graph.add_node("diagnose", self._diagnose_node)
         graph.add_node("remediate", self._remediate_node)
+        graph.add_node("assess_risk", self._assess_node)
         graph.add_node("approval", self._approval_node)
         graph.add_node("execute", self._execute_node)
         graph.add_node("escalate", self._escalate_node)
@@ -310,7 +387,8 @@ class Investigator:
             "triage", self._route_after_triage, {"diagnose": "diagnose", END: END}
         )
         graph.add_edge("diagnose", "remediate")
-        graph.add_edge("remediate", "approval")
+        graph.add_edge("remediate", "assess_risk")
+        graph.add_edge("assess_risk", "approval")
         graph.add_conditional_edges(
             "approval", self._route_after_approval, {"execute": "execute", "escalate": "escalate"}
         )
@@ -340,9 +418,14 @@ class Investigator:
 
     @staticmethod
     def _status(state: dict[str, Any]) -> Status:
-        if not state.get("report"):
+        if state.get("report"):
+            return "rejected" if state.get("decision") == REJECTED else "complete"
+        triage = state.get("triage")
+        if not state or (triage is not None and not triage.get("is_anomaly")):
             return "no_incident"
-        return "rejected" if state.get("decision") == REJECTED else "complete"
+        # There is a state, and either triage never finished or it found an incident, yet
+        # no report was written and nothing is waiting for a human: the run stopped.
+        return "failed"
 
     def start(
         self,
@@ -407,15 +490,38 @@ class Investigator:
         yield from self._stream(Command(resume=approved), thread_id)
 
     def _stream(self, payload: Any, thread_id: str) -> Iterator[dict[str, Any]]:
-        for chunk in self.graph.stream(
-            payload, config=self._config(thread_id), stream_mode="updates"
-        ):
+        """Advance the graph one node at a time, inside the incident's log context.
+
+        The context is entered around each step rather than around the whole generator.
+        A server drives a streaming response from a thread pool, one step per call and not
+        necessarily in the same context, so a variable set once at the top would neither
+        reach the later steps nor be safe to reset. Each step is where the work happens,
+        so each step is what has to be tagged.
+
+        A step that raises ends the stream with a ``failed`` event instead of cutting the
+        connection mid-response. The status line that follows says ``failed`` too.
+        """
+        updates = self.graph.stream(payload, config=self._config(thread_id), stream_mode="updates")
+        while True:
+            with incident_context(thread_id):
+                try:
+                    chunk = next(updates, None)
+                except Exception:
+                    logger.exception("investigation stopped at an internal error")
+                    chunk = _STOPPED
+            if chunk is None:
+                break
+            if chunk is _STOPPED:
+                yield {"event": "failed", "data": {"detail": STOPPED_DETAIL}}
+                break
             for node, update in chunk.items():
                 if node == "__interrupt__":
                     yield {"event": "awaiting_approval", "data": dict(update[0].value)}
                 else:
                     yield {"event": node, "data": _public(update)}
-        yield {"event": "done", "data": {"status": self.status(thread_id).status}}
+        with incident_context(thread_id):
+            status = self.status(thread_id).status
+        yield {"event": "done", "data": {"status": status}}
 
     def status(self, thread_id: str) -> Investigation:
         """Read a thread without advancing it."""
@@ -439,13 +545,19 @@ def _forwarding(collector: Timings, counters: Counters):
 
 
 def _usage(completions: list) -> dict[str, Any]:
-    """Roll a node's completions into the counters the state accumulates."""
-    return {
+    """Roll a node's completions into the counters the state accumulates.
+
+    The model is recorded only when one answered, so a node that degraded does not erase
+    the name of the model an earlier node used.
+    """
+    usage: dict[str, Any] = {
         "tokens": sum(c.total_tokens for c in completions),
         "input_tokens": sum(c.input_tokens for c in completions),
         "output_tokens": sum(c.output_tokens for c in completions),
-        "model": completions[0].model if completions else "unknown",
     }
+    if completions:
+        usage["model"] = completions[0].model
+    return usage
 
 
 def _public(update: Any) -> dict[str, Any]:

@@ -14,6 +14,11 @@ which is what a review needs.
 
 The hash of the plan is recorded, not just its text. That is what lets a review confirm
 the plan that ran is the plan that was shown to the approver.
+
+Each entry also records how the risk was decided: the policy floor, the independent
+assessment, the author's own rating, and the final rating the gate used. Entries written
+before that existed carry no such field, and their hashes are computed exactly as before,
+so an older log still verifies.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from drdoom.config import get_settings
 
@@ -47,11 +53,17 @@ class AuditEntry:
     execution: str
     previous_hash: str
     entry_hash: str
+    risk: dict[str, Any] | None = None
 
     def payload(self) -> dict:
-        """Everything the entry hash covers, which is everything but the hash itself."""
+        """Everything the entry hash covers, which is everything but the hash itself.
+
+        An entry without a risk record hashes as it did before the field existed.
+        """
         record = asdict(self)
         record.pop("entry_hash")
+        if record["risk"] is None:
+            record.pop("risk")
         return record
 
 
@@ -90,9 +102,10 @@ class AuditLog:
         plan_hash: str,
         executed: bool,
         execution: str,
+        risk: dict[str, Any] | None = None,
     ) -> AuditEntry:
         """Append one decision. The file is only ever opened for append."""
-        payload = {
+        payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
             "incident_id": incident_id,
             "principal": principal,
@@ -104,11 +117,16 @@ class AuditLog:
             "execution": execution,
             "previous_hash": self.last_hash(),
         }
+        if risk is not None:
+            payload["risk"] = risk
         entry = AuditEntry(**payload, entry_hash=compute_entry_hash(payload))
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(asdict(entry), sort_keys=True) + "\n")
+            handle.write(
+                json.dumps(entry.payload() | {"entry_hash": entry.entry_hash}, sort_keys=True)
+                + "\n"
+            )
 
         logger.info(
             "audit: %s %s by %s (plan %s)",

@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 406,
+  "output_tokens": 207,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"The deployment will be OOM\u2011killed immediately, causing a service outage and loss of in\u2011flight requests.\",\"reasons\":[\"Current memory usage exceeds the new 2\u202fGi limit\",\"Pods will be terminated, disrupting live traffic\",\"Rollback may take time to restore service\"]}"
+}

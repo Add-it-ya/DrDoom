@@ -4,8 +4,9 @@ Autonomous incident response for production services: detect an anomaly, diagnos
 root cause against real operational documentation, propose a remediation, hold it at a
 human approval gate, and write the postmortem.
 
-> ⚠️ **Early development.** The foundations are in place; the detection, retrieval and
-> agent layers are being built. Results tables below are filled in as each lands.
+> **Status.** Every layer in the table below is built and tested. The running service
+> scores windows posted to it in the synthetic four-metric schema; it does not yet read
+> from a live metrics source.
 
 ## Why this exists
 
@@ -21,7 +22,7 @@ authorises it — with the decision written to an append-only audit log.
 |---|---|
 | Project foundations | Done |
 | Data pipeline | Done |
-| Anomaly detection | Done |
+| Anomaly detection | Done (conv autoencoder, re-measured) |
 | Root-cause classification | Done |
 | Retrieval | Done |
 | Agents and model layer | Done |
@@ -49,21 +50,51 @@ alongside the simple baselines it is measured against. Full tables in
 
 ### Detection
 
-Baselines were built before the network so the comparison could actually be made, and
-thresholds are chosen on validation against a false alarm budget of one page per
-series-day, then applied unchanged to test.
+Baselines were built before the network so the comparison could actually be made.
+Thresholds are chosen on validation against a budget of one page per series-day and
+applied unchanged to test, and pages are counted as a person receives them: an alarm that
+stays up pages again every hour.
 
-| Dataset | Best detector | Detection rate | Minutes to detect | Alarms/day |
-|---|---|---:|---:|---:|
-| Real, unseen machines | `ewma_residual` | 0.752 | 8.5 | 1.65 |
-| Real, future incidents | `window_spread` | 0.782 | 8.0 | 0.92 |
-| Synthetic, unseen services | `lstm_autoencoder` | 1.000 | 15.0 | 1.16 |
+An earlier version counted one page per alarm however long it lasted. That rewarded a
+detector that never switches off — on some machines `window_spread` was in alarm all of
+the time — and it made `window_spread` look like the best detector on real data, at 0.782
+detection. Counted properly it detects 0.497 and ranks last of the useful detectors. The
+earlier claim that the autoencoder "loses to a one-line statistic" came from the same
+counting and does not hold.
 
-The autoencoder wins on synthetic data and **loses to a one-line statistic on real
-data**, where it trails the best baseline by 0.15 to 0.20 detection rate while raising
-more false alarms. That result is published rather than buried: it is the reason the
-baselines exist, and the reason the shipped default on real telemetry is not the
-neural network.
+Detectors are ranked by **curve area**: the mean, over budgets from half a page to four
+pages per series-day, of the best detection each budget allows. Learned detectors were
+trained three times with different seeds; the figures are the mean. Real data, future
+incidents on known machines (197 incidents):
+
+| Detector | Curve area | Detection | Pages/day on test | Normal time in alarm |
+|---|---:|---:|---:|---:|
+| `conv_autoencoder+naive_residual` | 0.621 | 0.592 | 1.70 | 6.2% |
+| `conv_autoencoder` | 0.569 | 0.579 | 1.81 | 5.5% |
+| `naive_residual` | 0.553 | 0.508 | 1.57 | 5.9% |
+| `lstm_autoencoder` | 0.531 | 0.564 | 2.04 | 6.8% |
+| `window_spread` (served until now) | 0.489 | 0.497 | 2.08 | 7.3% |
+
+The **conv autoencoder** reconstructs each window with every metric's mean removed, so it
+judges the shape of a window and not its level: the real dataset drifts between periods,
+and an autoencoder over absolute levels (the LSTM) mistakes that drift for incidents. Fused
+with `naive_residual` — the larger of the two scores, each on a scale fitted to its own
+training scores — it detects about nine more incidents in every hundred than
+`window_spread` at fewer pages, and the paired difference is above zero on all three seeds.
+On unseen machines the fusion reaches 0.600 against 0.454, though there the four validation
+machines prefer `ewma_residual` (0.534 on test), so that split does not settle a winner.
+On synthetic data every strong detector reaches 1.000; the conv autoencoder detects in
+13 to 15 minutes against 18 to 19 for `window_spread`.
+
+The service now scores with the conv autoencoder, trained at start-up on generated
+traffic with a fixed seed. `DRDOOM_DETECTOR` selects `conv` (the default), `conv+naive`,
+or `window_spread`; if training fails the service falls back to `window_spread` and logs
+why. The fusion measured best on real telemetry, and the service does not see real
+telemetry yet; on its generated traffic the plain autoencoder spends less time in alarm.
+
+One thing the table does not hide: no detector keeps to its budget on test. A threshold
+that pages once a day on validation pages 1.6 to 2.1 times on future incidents and more on
+unseen machines.
 
 Results here are not point-adjusted. Much of the published work on this benchmark
 credits a whole anomaly segment as detected when any single point inside it fires,
@@ -138,11 +169,35 @@ model is never asked for it, and a value supplied anyway is ignored — a system
 safety argument is "a human approves risky actions" cannot let the supervised thing
 decide what counts as risky.
 
+**Nor does the plan's author get the last word on its risk.** The rating the gate uses is
+the most cautious of three: a policy floor fixed in code for each catalogue action (a node
+drain is always high, only scaling out can be low), an independent assessment from a
+separate call that is shown the incident, the plan and the exact command but not the
+author's rating, and the author's own rating. None of the three can lower another. An
+assessor that cannot answer counts as high. The gate and the audit log show all three,
+and the approval hash covers the final rating. Set `DRDOOM_RISK_PROVIDER` or
+`DRDOOM_RISK_MODEL` to have a different model do the reviewing.
+
 **Every structured response is validated, and one repair is allowed.** A malformed plan
 goes back to the model with the validation error attached, once. Not a loop: a model that
 cannot satisfy a schema on the second attempt rarely does on the fifth, and an unbounded
-repair turns a bad response into a bill. If the provider is unreachable the agents degrade
-to the retrieved documentation and say so, rather than inventing a summary.
+repair turns a bad response into a bill. If the provider is unreachable, or its answer
+still fails after the repair, the agents degrade to the retrieved documentation and say
+which of the two happened, rather than inventing a summary. A plan written without a
+usable answer proposes nothing, is rated high risk so it still stops at the gate, and
+names no action the executor can run, so approving it changes nothing. Without a provider
+key the service still starts in that degraded form, and `/health` says so. A run that
+stops at an error is reported as `failed`, never as `no_incident`.
+
+**What runs is a field, not a sentence.** `immediate_action` is prose for the human. The
+executor reads only `action`, which can name one of five catalogue entries or nothing, and
+the approval gate shows the exact command it would render. The prose is never searched for
+keywords: a substring match once read "never roll back" as a rollback.
+
+**A window is checked before anything is spent on it.** Missing or infinite values, a
+length or metric order the threshold was not calibrated for, and oversized bodies are
+refused with 422 before the graph starts. Unchecked, a single NaN compared false against the
+threshold and was reported as an incident.
 
 ### Orchestration
 
@@ -160,10 +215,10 @@ shares nothing but the database file.
 
 ```
 triage ─┬─ no incident ─────────────────────────────► end
-        └─ incident ─► diagnose ─► remediate ─► approval ─► report ─► end
-                                                   │
-                                          suspends here when
-                                          risk is medium or high
+        └─ incident ─► diagnose ─► remediate ─► assess_risk ─► approval ─► report ─► end
+                                                                  │
+                                                         suspends here when the
+                                                         final risk is medium or high
 ```
 
 Routing after triage is conditional, so a quiet system costs nothing: no retrieval, no
@@ -180,13 +235,18 @@ delivers the same run a stage at a time over server-sent events, so the dashboar
 progressively instead of blocking on one long request.
 `POST /incidents/{id}/approve` resumes a suspended one.
 
+The service retrieves with BM25 and the MiniLM encoder fused, the configuration the
+evaluation suite scores. The first start embeds the document corpus, which takes a few
+minutes on a CPU; the matrix is saved beside the corpus and every later start reuses it.
+
 **Approving requires a credential**; reading does not. The key maps to a named principal,
 because the audit log has to record *who* decided and "someone with a valid key" is not an
 answer a review accepts. An unset key ring accepts nobody — a deployment that forgot to
 configure credentials refuses approvals rather than accepting them from anyone.
 
 **Approving twice is safe.** Networks retry, so a recorded decision is returned as it
-stands rather than applied a second time. A later reversal is refused.
+stands rather than applied a second time. A later request with the opposite answer
+changes nothing: the recorded decision is returned as it stands.
 
 **No model output reaches the DOM as markup.** Plain fields go through `textContent`; the
 postmortem is markdown, so it goes through DOMPurify. That chain matters here more than
@@ -239,6 +299,18 @@ python -m drdoom.evals.run              # replay recorded responses
 python -m drdoom.evals.run --record     # refresh them against a live provider
 ```
 
+Risk ratings are scored separately, against sixteen hand-labelled plans, for how often a
+plan ends up rated below what it deserves. The author's rating alone under-rates 8 of them;
+adding the policy floor leaves 4, each of which only an assessor can catch. With the
+assessor's answers recorded, all three together under-rate none of the sixteen, at the cost
+of 7 plans rated above what they needed
+([docs/risk-results.md](docs/risk-results.md)).
+
+```bash
+python -m drdoom.evals.risk              # replay recorded assessor answers
+python -m drdoom.evals.risk --record     # record them against a live provider
+```
+
 Token counts are reported on every API response, with an estimated cost where the model's
 published rate has been checked. An unknown model reports tokens and no cost rather than a
 guessed figure.
@@ -269,12 +341,13 @@ The seam to swap in a real tracer is one function.
 DRDOOM_API_KEYS="you:pick-a-key" GROQ_API_KEY=... docker compose up
 ```
 
-Two stages: the builder installs dependencies and bakes in the document corpus and the
-embedding model, so a cold container answers immediately rather than downloading half a
-gigabyte while someone waits. Torch comes from the CPU-only index — the default wheels
-carry CUDA libraries worth several gigabytes and nothing here uses a GPU. Runs as a
-non-root user, health-checks the application rather than the port, and keeps `state/` on a
-volume so suspended investigations survive a restart.
+Two stages: the builder installs dependencies and bakes in the document corpus, the
+embedding model and the corpus embeddings, so a cold container answers immediately rather
+than downloading half a gigabyte and embedding thousands of passages while someone waits.
+Torch comes from the CPU-only index — the default wheels carry CUDA libraries worth several
+gigabytes and nothing here uses a GPU. Runs as a non-root user, health-checks the
+application rather than the port, and keeps `state/` on a volume so suspended
+investigations survive a restart.
 
 ### Security
 

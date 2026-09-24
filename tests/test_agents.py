@@ -15,6 +15,7 @@ from drdoom.agents.schemas import Diagnosis, Postmortem, RemediationPlan
 from drdoom.agents.triage import TriageAgent, TriageResult, window_to_series
 from drdoom.data.windows import Scaler
 from drdoom.detect.baselines import WindowSpread
+from drdoom.executor import CATALOGUE
 from drdoom.llm.base import LLMInvalidOutputError, LLMUnavailableError
 from drdoom.llm.stub import SequenceProvider, StubProvider
 from drdoom.rag.corpus import Document
@@ -210,6 +211,43 @@ def test_a_failing_classifier_still_reports_the_incident() -> None:
     assert result.root_cause is None
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_a_missing_or_infinite_value_is_refused_not_scored(bad: float) -> None:
+    """NaN compares false against any threshold, which would read as an incident."""
+    agent = TriageAgent(fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"])
+    window = quiet_window(seed=1)
+    window[10, 1] = bad
+
+    with pytest.raises(ValueError, match="timestep 10, metric 'b'"):
+        agent.run(window)
+
+
+def test_a_window_with_the_wrong_number_of_metrics_is_refused() -> None:
+    agent = TriageAgent(fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"])
+
+    with pytest.raises(ValueError, match="expected 2 metrics"):
+        agent.run(np.zeros((60, 3), dtype=np.float32))
+
+
+@pytest.mark.parametrize("rows", [2, 59, 61, 500])
+def test_a_window_of_another_length_is_refused_when_one_is_calibrated(rows: int) -> None:
+    """The threshold was chosen for one length; a score over another is another statistic."""
+    agent = TriageAgent(
+        fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"], window_size=60
+    )
+
+    with pytest.raises(ValueError, match="expected 60 timesteps"):
+        agent.run(np.random.default_rng(0).normal(50, 1, (rows, 2)).astype(np.float32))
+
+
+def test_the_calibrated_length_is_accepted() -> None:
+    agent = TriageAgent(
+        fitted_detector(quiet_window()), threshold=10.0, feature_names=["a", "b"], window_size=60
+    )
+
+    assert agent.run(quiet_window(seed=1)).is_anomaly is False
+
+
 def test_triage_result_serialises() -> None:
     row = TriageResult(is_anomaly=True, score=1.5, threshold=1.0, root_cause="x", confidence=0.9)
 
@@ -265,11 +303,47 @@ def test_the_degraded_diagnosis_does_not_pretend_to_diagnose() -> None:
     assert "has not been summarised" in summary
 
 
-def test_a_persistently_malformed_diagnosis_raises() -> None:
+def test_a_persistently_malformed_diagnosis_degrades_instead_of_raising() -> None:
+    """Two unusable answers end in the same place as no answer: a stated placeholder."""
+    provider = StubProvider(default="I would rather not")
+    agent = DiagnosisAgent(corpus_retriever(), provider)
+
+    result = agent.run("memory limit container", "memory_leak")
+
+    assert len(provider.calls) == 2
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert result.citations
+    assert result.diagnosis.confidence == "low"
+    assert "could not be used" in result.diagnosis.summary
+
+
+def test_the_unusable_answers_are_still_billed() -> None:
     agent = DiagnosisAgent(corpus_retriever(), StubProvider(default="I would rather not"))
 
-    with pytest.raises(LLMInvalidOutputError):
-        agent.run("memory limit container", "memory_leak")
+    result = agent.run("memory limit container", "memory_leak")
+
+    assert len(result.completions) == 2
+    assert result.tokens > 0
+
+
+def test_an_unreachable_provider_is_told_apart_from_an_unusable_answer() -> None:
+    agent = DiagnosisAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert agent.run("memory limit container").failure == "unavailable"
+
+
+def test_the_structured_layer_still_raises_for_callers_that_want_to_know() -> None:
+    """Degrading is the agents' choice; the error itself still carries what it cost."""
+    from drdoom.llm.base import user
+    from drdoom.llm.structured import generate_structured
+
+    with pytest.raises(LLMInvalidOutputError) as caught:
+        generate_structured(StubProvider(default="nope"), [user("q")], Diagnosis)
+
+    assert len(caught.value.completions) == 2
 
 
 def test_query_combines_symptoms_and_predicted_cause() -> None:
@@ -326,6 +400,78 @@ def test_token_usage_is_reported() -> None:
     assert agent.run("summary", "memory_leak").tokens > 0
 
 
+def test_remediation_degrades_instead_of_failing_when_the_provider_is_down() -> None:
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    result = agent.run("Memory grew until the container was killed.", "memory_leak")
+
+    assert result.degraded is True
+    assert result.citations
+    assert result.completions == []
+
+
+def test_the_model_is_offered_every_catalogue_action() -> None:
+    provider = StubProvider(default=PLAN_JSON)
+    RemediationAgent(corpus_retriever(), provider).run("summary", "memory_leak")
+
+    prompt = provider.calls[0][-1].content
+    for spec in CATALOGUE:
+        assert spec.kind in prompt
+
+
+def test_the_action_the_model_names_is_kept() -> None:
+    plan_json = json.dumps(json.loads(PLAN_JSON) | {"action": "rollout_restart"})
+
+    plan = RemediationAgent(corpus_retriever(), StubProvider(default=plan_json)).run("s").plan
+
+    assert plan.action == "rollout_restart"
+
+
+def test_an_invented_action_is_repaired_or_refused() -> None:
+    """An action outside the catalogue fails validation like an invented risk level."""
+    invented = json.dumps(json.loads(PLAN_JSON) | {"action": "drop_database"})
+    provider = SequenceProvider([invented, PLAN_JSON])
+
+    plan = RemediationAgent(corpus_retriever(), provider).run("summary").plan
+
+    assert len(provider.calls) == 2
+    assert plan.action is None
+
+
+def test_a_plan_written_without_a_model_still_needs_a_human() -> None:
+    """Its risk is unknown, and an unknown risk is never treated as safe."""
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert agent.run("summary", "memory_leak").plan.requires_approval is True
+
+
+def test_a_plan_written_without_a_model_proposes_nothing_executable() -> None:
+    agent = RemediationAgent(
+        corpus_retriever(), StubProvider(fail_with=LLMUnavailableError("unreachable"))
+    )
+
+    assert agent.run("summary", "memory_leak").plan.action is None
+
+
+def test_a_persistently_malformed_plan_is_held_for_a_human() -> None:
+    """An answer that never fitted the schema is an unassessed plan, treated as high risk."""
+    agent = RemediationAgent(corpus_retriever(), StubProvider(default="restart everything"))
+
+    result = agent.run("summary", "memory_leak")
+
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert result.plan.risk_level == "high"
+    assert result.plan.requires_approval is True
+    assert result.plan.action is None
+    assert "could not be used" in result.plan.immediate_action
+    assert len(result.completions) == 2
+
+
 # --- reporting ---------------------------------------------------------------------
 
 
@@ -367,6 +513,18 @@ def test_reporting_degrades_to_the_recorded_facts() -> None:
     assert result.degraded is True
     assert "Decision: rejected_by_human" in result.postmortem.action_taken
     assert "Executed: nothing" in result.postmortem.action_taken
+
+
+def test_a_persistently_malformed_postmortem_falls_back_to_the_recorded_facts() -> None:
+    agent = ReportingAgent(StubProvider(default="it went fine"))
+
+    result = agent.run(diagnosis_fixture(), plan_fixture(), "approved_by_human", "restart")
+
+    assert result.degraded is True
+    assert result.failure == "invalid_output"
+    assert "could not be used" in result.postmortem.summary
+    assert "Decision: approved_by_human" in result.postmortem.action_taken
+    assert len(result.completions) == 2
 
 
 def test_postmortem_markdown_has_every_section() -> None:

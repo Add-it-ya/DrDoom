@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 387,
+  "output_tokens": 376,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"Draining the node evicts critical pods, causing a service outage and possible data loss for stateful workloads\",\"reasons\":[\"service disruption from pod eviction\",\"potential data loss if stateful pods are moved improperly\",\"command may target wrong resource, amplifying impact\"]}"
+}

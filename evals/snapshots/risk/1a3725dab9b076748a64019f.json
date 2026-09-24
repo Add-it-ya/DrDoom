@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 404,
+  "output_tokens": 259,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"The checkout service will be unavailable for ~90 seconds, causing checkout failures for users.\",\"reasons\":[\"single-replica deployment causes downtime during restart\",\"restart may not address the root cause, leaving the issue unresolved\",\"no rollback step could leave the service down if the new pod fails to start\"]}"
+}

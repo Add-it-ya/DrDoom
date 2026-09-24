@@ -9,20 +9,32 @@ and the two drifted.
 Three properties this layer is responsible for.
 
 **Approving requires authentication**, and the authenticated name is what the audit log
-records. Reading is open; deciding is not.
+records. Reading is open; deciding is not. The keys are read at startup, after the local
+.env has been loaded, so a key written there is one the service accepts.
 
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
 returns the same outcome rather than a 404 or a second execution.
 
+**A window is checked before anything is spent on it.** Values must be finite and the
+shape must be the one the detector's threshold was calibrated for, or the request is
+refused with 422 before the graph starts. A malformed payload costs no retrieval and no
+model call, and never reaches the approval gate as a phantom incident.
+
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
-a sanitiser. See the note in ``web/dashboard.html``.
+a sanitiser. See the note in ``web/index.html``.
+
+**Health describes the parts, not the process.** ``/health`` says whether a model is
+configured, whether anyone can approve, and whether the investigation store answers. A
+service without a model still works in its degraded form, so that is ``degraded`` with a
+200; a store that does not answer means nothing works, so that is a 503.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -32,21 +44,25 @@ from typing import Annotated, Any
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from drdoom.agents.graph import Investigation, Investigator
-from drdoom.api.auth import KeyRing, Principal, configure, require_principal
+from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
+from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
 from drdoom.audit import AuditLog
-from drdoom.config import get_settings
+from drdoom.config import get_settings, load_env_file
+from drdoom.llm.factory import UnavailableProvider
 from drdoom.observability import configure_logging, incident_context
 
 logger = logging.getLogger(__name__)
 
-WINDOW_LENGTH = 60
+# An upper bound checked before the service-specific shape, so an oversized body is
+# refused without being turned into an array. A day of four metrics is 5760 cells.
+MAX_CELLS = 10_000
+MAX_SYMPTOMS = 2_000
 TERMINAL = {"complete", "rejected"}
-_FEATURES = ("latency_ms", "error_rate_pct", "cpu_pct", "queue_depth")
 
 
 # --- request and response shapes ---------------------------------------------------
@@ -58,8 +74,13 @@ class MetricWindow(BaseModel):
     values: list[list[float]] = Field(
         description="One row per timestep, one column per metric",
     )
-    feature_names: list[str] | None = None
-    symptoms: str = Field(default="", description="What the reporter observed")
+    feature_names: list[str] | None = Field(
+        default=None,
+        description="Metric names in column order; if given, must match the service's order",
+    )
+    symptoms: str = Field(
+        default="", max_length=MAX_SYMPTOMS, description="What the reporter observed"
+    )
 
     @field_validator("values")
     @classmethod
@@ -69,8 +90,18 @@ class MetricWindow(BaseModel):
         widths = {len(row) for row in values}
         if len(widths) != 1:
             raise ValueError("every row must have the same number of metrics")
-        if not widths.pop():
+        width = widths.pop()
+        if not width:
             raise ValueError("a window needs at least one metric")
+        if len(values) * width > MAX_CELLS:
+            raise ValueError(f"a window may hold at most {MAX_CELLS} values")
+        for row_number, row in enumerate(values):
+            for column, value in enumerate(row):
+                if not math.isfinite(value):
+                    raise ValueError(
+                        f"values must be finite; got {value} at timestep {row_number}, "
+                        f"column {column}"
+                    )
         return values
 
 
@@ -139,6 +170,50 @@ class Service:
     def stage_latencies(self) -> dict[str, Any]:
         return self.investigator.counters.snapshot()
 
+    def health(self) -> tuple[str, dict[str, Any]]:
+        """The overall verdict, and what each part it rests on reports.
+
+        Nothing here names a key or repeats an error message: the endpoint is public.
+        """
+        triage = self.investigator.triage
+        provider = self.investigator.diagnosis.provider
+        reviewer = self.investigator.risk.provider
+        model_ready = not isinstance(provider, UnavailableProvider)
+        reviewer_ready = not isinstance(reviewer, UnavailableProvider)
+        approvals_ready = len(current_keyring()) > 0
+        try:
+            if self.connection is not None:
+                self.connection.execute("select 1").fetchone()
+            store_ready = True
+        except Exception:
+            logger.exception("the investigation store did not answer")
+            store_ready = False
+
+        components = {
+            "model": {"ready": model_ready, "provider": provider.name, "name": provider.model},
+            # Without it every plan below high is treated as high, so nothing is unsafe,
+            # but every plan waits for a human.
+            "risk_assessor": {
+                "ready": reviewer_ready,
+                "provider": reviewer.name,
+                "name": reviewer.model,
+            },
+            "approvals": {"ready": approvals_ready},
+            "store": {"ready": store_ready},
+            "detector": {"ready": True, "name": triage.detector.name},
+            "classifier": {"ready": triage.classifier is not None},
+            "retriever": {
+                "ready": True,
+                "name": type(self.investigator.diagnosis.retriever).__name__,
+            },
+        }
+        if not store_ready:
+            return "unavailable", components
+        # The classifier is optional: without it incidents are unclassified, which the
+        # dashboard shows, and nothing else changes.
+        ready = model_ready and reviewer_ready and approvals_ready
+        return ("ok" if ready else "degraded"), components
+
 
 _service: Service | None = None
 
@@ -160,8 +235,38 @@ CurrentService = Annotated[Service, Depends(get_service)]
 Approver = Annotated[Principal, Depends(require_principal)]
 
 
-def _window(payload: MetricWindow) -> np.ndarray:
-    return np.asarray(payload.values, dtype=np.float32)
+def _window(payload: MetricWindow, current: Service) -> np.ndarray:
+    """The payload as an array the detector can score, or a 422 saying why not.
+
+    Checked here, before the graph starts, so that a streaming request fails with a status
+    code rather than an error event halfway through a response that already said 200.
+    """
+    triage = current.investigator.triage
+    if payload.feature_names is not None and list(payload.feature_names) != triage.feature_names:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"feature_names must be {triage.feature_names} in that order, "
+            f"got {list(payload.feature_names)}",
+        )
+    window = np.asarray(payload.values, dtype=np.float32)
+    try:
+        triage.check(window)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
+    return window
+
+
+def _stopped(incident_id: str, error: Exception) -> HTTPException:
+    """A run that raised, logged under its incident and answered with where to look.
+
+    The id is returned so the partial state can be read back, and reads as ``failed``.
+    """
+    with incident_context(incident_id):
+        logger.error("investigation stopped at an internal error", exc_info=error)
+    return HTTPException(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        {"incident_id": incident_id, "status": "failed", "message": STOPPED_DETAIL},
+    )
 
 
 def _sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
@@ -179,6 +284,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         configure_logging(settings.log_level, structured=settings.environment != "local")
+        if keyring is None:
+            # Read here and not when the module is imported. Until now the local .env was
+            # loaded only inside provider construction, after the key ring had already been
+            # built, so a key written there was never accepted.
+            load_env_file()
+            configure(KeyRing.from_environment())
         if _service is None:
             from drdoom.api.factory import build_service
 
@@ -188,7 +299,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     if service is not None:
         set_service(service)
-    configure(keyring or KeyRing.from_environment())
+    if keyring is not None:
+        configure(keyring)
 
     app = FastAPI(
         title="DrDoom",
@@ -197,8 +309,14 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     )
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
-        return {"status": "ok"}
+    def health() -> JSONResponse:
+        if _service is None:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "starting"}
+            )
+        verdict, components = _service.health()
+        code = status.HTTP_503_SERVICE_UNAVAILABLE if verdict == "unavailable" else 200
+        return JSONResponse(status_code=code, content={"status": verdict, "components": components})
 
     @app.get("/metrics")
     def metrics(current: CurrentService) -> dict[str, Any]:
@@ -218,10 +336,14 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     def investigate(payload: MetricWindow, current: CurrentService) -> InvestigationView:
         """Start an investigation and return where it stopped."""
         current.count("investigate")
+        window = _window(payload, current)
         incident_id = uuid.uuid4().hex[:12]
-        outcome = current.investigator.start(
-            _window(payload), payload.symptoms, incident_id, payload.feature_names
-        )
+        try:
+            outcome = current.investigator.start(
+                window, payload.symptoms, incident_id, payload.feature_names
+            )
+        except Exception as error:
+            raise _stopped(incident_id, error) from error
         logger.info("incident %s finished in state %s", incident_id, outcome.status)
         return InvestigationView.of(outcome)
 
@@ -229,12 +351,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     def investigate_stream(payload: MetricWindow, current: CurrentService) -> StreamingResponse:
         """The same run, delivered a stage at a time."""
         current.count("investigate_stream")
+        window = _window(payload, current)
         incident_id = uuid.uuid4().hex[:12]
 
         def events() -> Iterator[dict[str, Any]]:
             yield {"event": "accepted", "data": {"incident_id": incident_id}}
             yield from current.investigator.stream_start(
-                _window(payload), payload.symptoms, incident_id, payload.feature_names
+                window, payload.symptoms, incident_id, payload.feature_names
             )
 
         return StreamingResponse(
@@ -245,13 +368,18 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
 
     @app.get("/demo/window")
     def demo_window(anomalous: bool = True) -> dict[str, Any]:
-        """A window shaped like the detector expects, so the dashboard has input."""
+        """A window shaped like the detector expects, so the dashboard has input.
+
+        The names come from the generator that made the values, so they always describe
+        this window. A service configured for other metrics refuses it with a 422.
+        """
         from drdoom.api.factory import demo_window as make_window
+        from drdoom.data.synthetic import FEATURE_NAMES
 
         window = make_window(anomalous=anomalous)
         return {
             "values": window.tolist(),
-            "feature_names": list(_FEATURES),
+            "feature_names": list(FEATURE_NAMES),
             "symptoms": (
                 "latency and queue depth climbing over the last half hour"
                 if anomalous
@@ -293,9 +421,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
                 f"incident {incident_id} is not waiting for a decision",
             )
 
-        outcome = current.investigator.resume(
-            incident_id, approved=decision.approved, principal=principal.name
-        )
+        try:
+            outcome = current.investigator.resume(
+                incident_id, approved=decision.approved, principal=principal.name
+            )
+        except Exception as error:
+            raise _stopped(incident_id, error) from error
         logger.info("incident %s decided by %s", incident_id, principal.name)
         return InvestigationView.of(outcome)
 
@@ -313,6 +444,22 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
     dashboard = get_settings().project_root / "web"
     if dashboard.is_dir():
         app.mount("/", StaticFiles(directory=dashboard, html=True), name="dashboard")
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:
+        """Say where a request is wrong and why, without echoing what was sent.
+
+        The default handler returns the rejected input. For a window that is up to ten
+        thousand numbers sent straight back, and when the input held NaN it cannot be
+        serialised at all: the refusal itself failed with a 500.
+        """
+        detail = [
+            {"loc": list(item["loc"]), "msg": item["msg"], "type": item["type"]}
+            for item in error.errors()
+        ]
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={"detail": detail}
+        )
 
     @app.exception_handler(ValueError)
     async def value_error(request: Request, error: ValueError):  # pragma: no cover

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -88,3 +89,32 @@ class SentenceTransformerEmbedder:
             normalize_embeddings=True,
         )
         return vectors.astype(np.float32)
+
+
+def encode_cached(embedder: Embedder, texts: list[str], path: Path) -> np.ndarray:
+    """Encode ``texts``, reusing a saved matrix only if it was made from exactly these inputs.
+
+    Embedding the corpus is the slowest part of starting the service, minutes on a CPU, and
+    the result changes only when the text or the model does. The file carries a fingerprint
+    of both, so a matrix made from anything else is recomputed rather than trusted. It is
+    written to a temporary name first, so an interrupted save cannot leave a torn file.
+    """
+    fingerprint = _fingerprint(embedder.name, texts)
+    if path.is_file():
+        with np.load(path) as saved:
+            if str(saved["fingerprint"]) == fingerprint:
+                return saved["matrix"]
+
+    matrix = embedder.encode(texts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_suffix(".partial.npz")
+    np.savez(partial, matrix=matrix, fingerprint=np.array(fingerprint))
+    partial.replace(path)
+    return matrix
+
+
+def _fingerprint(model: str, texts: list[str]) -> str:
+    digest = hashlib.sha256(model.encode("utf-8"))
+    for text in texts:
+        digest.update(hashlib.sha256(text.encode("utf-8")).digest())
+    return digest.hexdigest()

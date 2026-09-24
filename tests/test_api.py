@@ -15,6 +15,7 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import Investigator, make_checkpointer
 from drdoom.agents.remediation import RemediationAgent
 from drdoom.agents.reporting import ReportingAgent
+from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.api.auth import KeyRing
 from drdoom.api.main import Service, create_app, set_service
@@ -25,7 +26,7 @@ from drdoom.llm.stub import StubProvider
 from drdoom.rag.corpus import Document
 from drdoom.rag.index import BM25Index
 from drdoom.rag.ingest import chunk_all
-from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, disturbed_window
+from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, RISK_LOW, disturbed_window
 
 KEY = "test-key-value"
 PRINCIPAL = "aditya"
@@ -78,12 +79,13 @@ def build_service(tmp_path: Path, diagnosis=DIAGNOSIS, postmortem=POSTMORTEM) ->
 
     checkpointer, connection = make_checkpointer(tmp_path / "state.sqlite")
     investigator = Investigator(
-        TriageAgent(detector, threshold=5.0, feature_names=["a", "b"]),
+        TriageAgent(detector, threshold=5.0, feature_names=["a", "b"], window_size=60),
         DiagnosisAgent(retriever, StubProvider(default=diagnosis)),
         RemediationAgent(retriever, StubProvider(default=PLAN)),
         ReportingAgent(StubProvider(default=postmortem)),
         checkpointer,
         audit=audit,
+        risk=RiskAssessor(StubProvider(default=RISK_LOW)),
     )
     return Service(investigator=investigator, audit=audit, connection=connection)
 
@@ -114,7 +116,19 @@ def window_payload(anomalous: bool = True) -> dict:
 
 
 def test_health_needs_no_credential(client) -> None:
-    assert client.get("/health").json() == {"status": "ok"}
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_health_reports_each_part_it_rests_on(client) -> None:
+    components = client.get("/health").json()["components"]
+
+    assert {"model", "approvals", "store", "detector", "classifier", "retriever"} <= set(components)
+    assert components["model"]["ready"] is True
+    assert components["approvals"]["ready"] is True
+    assert components["store"]["ready"] is True
 
 
 def test_a_calm_window_returns_without_an_incident(client) -> None:
@@ -151,6 +165,109 @@ def test_a_malformed_window_is_rejected(client, values) -> None:
     response = client.post("/investigate", json={"values": values})
 
     assert response.status_code == 422
+
+
+# --- what a window must be before anything is spent on it -------------------------
+
+
+def with_value(value: float) -> dict:
+    body = window_payload()
+    body["values"][10][1] = value
+    return body
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_missing_or_infinite_value_is_refused_before_any_model_call(tmp_path, bad) -> None:
+    """NaN compares false against the threshold, so it used to read as an incident."""
+    service = build_service(tmp_path)
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+    # Sent as raw json: Python's encoder, like many clients, writes NaN and Infinity as
+    # bare tokens, and the server's parser accepts them.
+    with TestClient(app) as local:
+        response = local.post(
+            "/investigate",
+            content=json.dumps(with_value(bad)),
+            headers={"Content-Type": "application/json"},
+        )
+    set_service(None)
+
+    assert response.status_code == 422
+    assert "must be finite" in response.json()["detail"][0]["msg"]
+    assert service.investigator.diagnosis.provider.calls == []
+    assert service.investigator.remediation.provider.calls == []
+    assert service.audit.entries() == []
+
+
+@pytest.mark.parametrize("rows", [2, 59, 61, 120])
+def test_a_window_of_another_length_is_refused(client, rows) -> None:
+    values = (disturbed_window().tolist() * 2)[:rows]
+
+    response = client.post("/investigate", json={"values": values, "feature_names": ["a", "b"]})
+
+    assert response.status_code == 422
+    assert "expected 60 timesteps" in response.json()["detail"]
+
+
+def test_a_window_with_another_number_of_metrics_is_refused(client) -> None:
+    values = np.zeros((60, 3)).tolist()
+
+    response = client.post("/investigate", json={"values": values})
+
+    assert response.status_code == 422
+    assert "expected 2 metrics" in response.json()["detail"]
+
+
+def test_metric_names_in_another_order_are_refused_not_ignored(client) -> None:
+    """Swapped columns used to be scored as if they were in the service's order."""
+    body = window_payload() | {"feature_names": ["b", "a"]}
+
+    response = client.post("/investigate", json=body)
+
+    assert response.status_code == 422
+    assert "in that order" in response.json()["detail"]
+
+
+def test_a_window_without_names_is_taken_in_the_service_order(client) -> None:
+    body = window_payload(anomalous=False)
+    del body["feature_names"]
+
+    assert client.post("/investigate", json=body).status_code == 200
+
+
+def test_an_oversized_window_is_refused_before_it_becomes_an_array(client) -> None:
+    response = client.post("/investigate", json={"values": [[1.0, 2.0]] * 5_001})
+
+    assert response.status_code == 422
+
+
+def test_a_refusal_does_not_echo_the_rejected_window(client) -> None:
+    """The default handler returned every value back; the reason is enough."""
+    response = client.post("/investigate", json={"values": [[1.0, 2.0]] * 5_001})
+
+    assert "input" not in response.json()["detail"][0]
+    assert len(response.content) < 1_000
+
+
+def test_overlong_symptoms_are_refused(client) -> None:
+    body = window_payload() | {"symptoms": "x" * 2_001}
+
+    assert client.post("/investigate", json=body).status_code == 422
+
+
+def test_a_bad_stream_request_fails_with_a_status_not_halfway_through(client) -> None:
+    """Refused before the response starts, so the client is never told 200 first."""
+    short = {"values": disturbed_window().tolist()[:30], "feature_names": ["a", "b"]}
+
+    with client.stream("POST", "/investigate/stream", json=short) as stream:
+        assert stream.status_code == 422
+
+
+def test_the_gate_shows_the_command_approval_would_run(client) -> None:
+    """A human approves a command, not a sentence."""
+    awaiting = client.post("/investigate", json=window_payload()).json()["awaiting"]
+
+    assert awaiting["action"] == "rollout_restart"
+    assert awaiting["would_run"].startswith("kubectl rollout restart deployment/")
 
 
 # --- authentication ----------------------------------------------------------------
@@ -240,7 +357,7 @@ def test_a_repeat_does_not_execute_a_second_time(client) -> None:
     assert len(client.get(f"/incidents/{incident}/audit").json()["entries"]) == 1
 
 
-def test_a_reversal_after_the_fact_is_refused(client) -> None:
+def test_a_reversal_after_the_fact_returns_the_recorded_decision(client) -> None:
     incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
     headers = {"X-API-Key": KEY}
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
@@ -405,3 +522,163 @@ def test_a_calm_run_times_only_the_stage_that_ran(client) -> None:
 
     assert "triage" in stages
     assert "diagnose" not in stages
+
+
+# --- a run that stops partway -------------------------------------------------------
+
+
+class BrokenRetriever:
+    def search(self, query: str, k: int = 10):
+        raise RuntimeError("index is gone at /secret/path")
+
+
+@pytest.fixture
+def broken(tmp_path):
+    service = build_service(tmp_path)
+    service.investigator.diagnosis.retriever = BrokenRetriever()
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+    with TestClient(app) as test_client:
+        yield test_client
+    set_service(None)
+
+
+def test_a_run_that_stops_answers_500_with_where_to_look(broken) -> None:
+    response = broken.post("/investigate", json=window_payload())
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["status"] == "failed"
+    assert "/secret/path" not in response.text
+
+    incident = broken.get(f"/incidents/{detail['incident_id']}").json()
+    assert incident["status"] == "failed"
+    assert incident["is_anomaly"] is True
+
+
+def test_a_stream_that_stops_ends_with_a_failed_event(broken) -> None:
+    with broken.stream("POST", "/investigate/stream", json=window_payload()) as stream:
+        body = "".join(stream.iter_text())
+
+    events = [line[7:].strip() for line in body.splitlines() if line.startswith("event: ")]
+    assert events[-2:] == ["failed", "done"]
+    assert '"status": "failed"' in body
+    assert "/secret/path" not in body
+
+
+# --- configuration --------------------------------------------------------------------
+
+
+def test_a_service_without_a_model_reports_degraded_but_stays_up(tmp_path) -> None:
+    from drdoom.llm.factory import UnavailableProvider
+
+    service = build_service(tmp_path)
+    missing = UnavailableProvider("no Groq credentials")
+    for agent in (
+        service.investigator.diagnosis,
+        service.investigator.remediation,
+        service.investigator.reporting,
+    ):
+        agent.provider = missing
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        health = local.get("/health")
+        body = local.post("/investigate", json=window_payload()).json()
+    set_service(None)
+
+    assert health.status_code == 200
+    assert health.json()["status"] == "degraded"
+    assert health.json()["components"]["model"]["ready"] is False
+    assert "Groq" not in health.text
+    assert body["status"] == "awaiting_approval"
+    assert body["degraded"] is True
+
+
+def test_no_one_able_to_approve_reports_degraded(tmp_path) -> None:
+    app = create_app(service=build_service(tmp_path), keyring=KeyRing({}))
+
+    with TestClient(app) as local:
+        body = local.get("/health").json()
+    set_service(None)
+
+    assert body["status"] == "degraded"
+    assert body["components"]["approvals"]["ready"] is False
+
+
+def test_a_store_that_does_not_answer_is_unavailable(tmp_path) -> None:
+    service = build_service(tmp_path)
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        service.connection.close()
+        response = local.get("/health")
+    set_service(None)
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "unavailable"
+
+
+def test_an_approval_key_written_in_the_local_env_file_is_accepted(tmp_path, monkeypatch) -> None:
+    """The key ring used to be built at import, before the .env was ever read."""
+    from drdoom.api import auth
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text("DRDOOM_API_KEYS=ops:from-the-file\n", encoding="utf-8")
+    monkeypatch.setattr("drdoom.config.PROJECT_ROOT", project)
+    monkeypatch.delenv(auth.KEYS_ENV, raising=False)
+
+    app = create_app(service=build_service(tmp_path))
+    try:
+        with TestClient(app) as local:
+            incident = local.post("/investigate", json=window_payload()).json()["incident_id"]
+            response = local.post(
+                f"/incidents/{incident}/approve",
+                json={"approved": True},
+                headers={"X-API-Key": "from-the-file"},
+            )
+    finally:
+        set_service(None)
+        auth.configure(KeyRing())
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "approved_by_human"
+
+
+def test_a_missing_provider_key_starts_a_degraded_service_not_a_crash(monkeypatch) -> None:
+    from drdoom.llm.base import LLMUnavailableError
+    from drdoom.llm.factory import UnavailableProvider, build_provider_or_unavailable
+
+    monkeypatch.setattr("drdoom.llm.factory.load_env_file", lambda: 0)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    provider = build_provider_or_unavailable("groq")
+
+    assert isinstance(provider, UnavailableProvider)
+    with pytest.raises(LLMUnavailableError):
+        provider.complete([])
+
+
+def test_health_reports_the_risk_assessor(client) -> None:
+    assert client.get("/health").json()["components"]["risk_assessor"]["ready"] is True
+
+
+def test_a_missing_risk_assessor_model_is_degraded_not_unsafe(tmp_path) -> None:
+    from drdoom.llm.factory import UnavailableProvider
+
+    service = build_service(tmp_path)
+    service.investigator.risk.provider = UnavailableProvider("no key")
+    app = create_app(service=service, keyring=KeyRing({KEY: PRINCIPAL}))
+
+    with TestClient(app) as local:
+        body = local.get("/health").json()
+    set_service(None)
+
+    assert body["status"] == "degraded"
+    assert body["components"]["risk_assessor"]["ready"] is False
+
+
+def test_the_gate_shows_how_the_risk_was_decided(client) -> None:
+    body = client.post("/investigate", json=window_payload()).json()
+
+    assert set(body["awaiting"]["risk"]) >= {"author", "floor", "assessor", "final"}

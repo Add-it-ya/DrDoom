@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     environment: Literal["local", "ci", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     llm_provider: Literal["groq", "anthropic", "stub"] = "groq"
+    # The independent risk assessor. Unset, it is a separate call to the same model; set
+    # either one to have a different model review the plans the first one writes.
+    risk_provider: Literal["groq", "anthropic", "stub"] | None = None
+    risk_model: str | None = None
+    # What triage scores windows with. See drdoom.api.factory.build_detector.
+    detector: Literal["conv", "conv+naive", "window_spread"] = "conv"
 
     @computed_field
     @property

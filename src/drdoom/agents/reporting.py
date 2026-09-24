@@ -12,7 +12,17 @@ import logging
 from dataclasses import dataclass, field
 
 from drdoom.agents.schemas import Citation, Diagnosis, Postmortem, RemediationPlan
-from drdoom.llm.base import Completion, LLMProvider, LLMUnavailableError, Message
+from drdoom.llm.base import (
+    Completion,
+    Failure,
+    LLMInvalidOutputError,
+    LLMProvider,
+    LLMUnavailableError,
+    Message,
+    failure_clause,
+    failure_kind,
+    spent_on,
+)
 from drdoom.llm.structured import generate_structured
 
 logger = logging.getLogger(__name__)
@@ -29,6 +39,7 @@ class ReportResult:
     markdown: str
     degraded: bool = False
     completions: list[Completion] = field(default_factory=list)
+    failure: Failure | None = None
 
     @property
     def tokens(self) -> int:
@@ -72,11 +83,15 @@ class ReportingAgent:
                 system=SYSTEM,
                 max_tokens=1200,
             )
-        except LLMUnavailableError as error:
-            logger.warning("provider unavailable, writing the record without prose: %s", error)
-            postmortem = self._degraded(diagnosis, plan, decision, executed)
+        except (LLMUnavailableError, LLMInvalidOutputError) as error:
+            logger.warning("no usable postmortem, writing the record without prose: %s", error)
+            postmortem = self._degraded(diagnosis, plan, decision, executed, failure_clause(error))
             return ReportResult(
-                postmortem=postmortem, markdown=self._render(postmortem, citations), degraded=True
+                postmortem=postmortem,
+                markdown=self._render(postmortem, citations),
+                degraded=True,
+                completions=spent_on(error),
+                failure=failure_kind(error),
             )
 
         return ReportResult(
@@ -86,12 +101,17 @@ class ReportingAgent:
         )
 
     def _degraded(
-        self, diagnosis: Diagnosis, plan: RemediationPlan, decision: str, executed: str | None
+        self,
+        diagnosis: Diagnosis,
+        plan: RemediationPlan,
+        decision: str,
+        executed: str | None,
+        reason: str,
     ) -> Postmortem:
-        """The facts, unembellished, when no model was available to write them up."""
+        """The facts, unembellished, when no usable model answer was there to write them up."""
         return Postmortem(
             title=f"Incident: {diagnosis.likely_cause}",
-            summary="Generated without a model. The recorded facts follow.",
+            summary=f"Written without prose because {reason}. The recorded facts follow.",
             what_happened=diagnosis.summary,
             root_cause=f"{diagnosis.likely_cause} (confidence {diagnosis.confidence})",
             action_taken=(

@@ -37,9 +37,17 @@ healthy"*, or embeds markup for the model to reproduce.
 **What is done.** The model's influence is bounded by what it is allowed to decide.
 Retrieved text shapes the wording of a diagnosis; it cannot change the risk rating's
 consequences, because `requires_approval` is a computed field derived from `risk_level`
-rather than a value the model supplies (`src/drdoom/agents/schemas.py`). Nor can it cause
-an action: execution matches against a five-entry allowlist, and anything unrecognised is
-refused rather than run (`src/drdoom/executor.py`).
+rather than a value the model supplies (`src/drdoom/agents/schemas.py`). Nor can a
+document that steers the plan's author steer the rating alone: the final rating is the
+highest of a per-action floor in code, an independent assessment made without sight of
+the author's rating, and the author's own, and the assessor reads passage titles rather
+than passage text (`src/drdoom/agents/risk.py`). A drain is high risk whatever any model
+says. Nor can it cause
+an action outside a five-entry allowlist. What runs is read from `RemediationPlan.action`, a
+field that can only name a catalogue entry or nothing; the prose of the plan is never
+searched for keywords, because a substring match reads "never roll back" as a rollback. A
+plan that names no action is refused rather than run, and the gate shows the approver the
+exact command approval would render (`src/drdoom/executor.py`).
 
 **Residual risk.** A convincing but wrong diagnosis is still possible, and the groundedness
 score in CI is a lexical proxy, not a truth check. The system reduces the *blast radius* of
@@ -120,8 +128,12 @@ process's environment. A secrets manager would be the next step.
 **Attack.** Post large or repeated windows and make the service spend model tokens.
 
 **What is done.** Little, deliberately. `/investigate` is unauthenticated so the demo can be
-clicked. Window shape is validated, conditional routing means a calm window costs zero
-tokens, and per-incident token usage is reported.
+clicked. A window is refused with 422 before the graph starts unless every value is finite
+and its shape and metric order are the ones the detector's threshold was calibrated for, so
+a malformed payload costs no retrieval and no model call. Bodies are capped at 10,000
+values and symptoms at 2,000 characters, and a refusal does not echo the rejected input.
+Conditional routing means a calm window costs zero tokens, and per-incident token usage is
+reported.
 
 **Residual risk.** **There is no rate limiting.** A public deployment can have its provider
 quota drained by anyone who finds it. This is the largest open issue and is called out

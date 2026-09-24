@@ -1,866 +1,2397 @@
-[
-  {
-    "detector": "max_deviation",
-    "events": 197,
-    "detection_rate": 0.5635,
-    "detection_rate_ci": [
-      0.4924,
-      0.6345
-    ],
-    "median_minutes_to_detect": 7.0,
-    "minutes_to_detect_ci": [
-      6.0,
-      9.0
-    ],
-    "false_alarms_per_day": 1.238,
-    "false_alarms_per_day_ci": [
-      0.546,
-      1.931
-    ],
-    "window_precision": 0.3436,
-    "window_recall": 0.4484,
-    "window_f1": 0.3891,
-    "roc_auc": 0.7829,
-    "pr_auc": 0.3811,
-    "threshold": 12.707933,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "window_spread",
-    "events": 197,
-    "detection_rate": 0.7817,
-    "detection_rate_ci": [
-      0.7208,
-      0.8376
-    ],
-    "median_minutes_to_detect": 8.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      9.0
-    ],
-    "false_alarms_per_day": 0.922,
-    "false_alarms_per_day_ci": [
-      0.625,
-      1.38
-    ],
-    "window_precision": 0.1954,
-    "window_recall": 0.6343,
-    "window_f1": 0.2988,
-    "roc_auc": 0.7735,
-    "pr_auc": 0.3429,
-    "threshold": 1.661646,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "ewma_residual",
-    "events": 197,
-    "detection_rate": 0.5228,
-    "detection_rate_ci": [
-      0.4518,
-      0.5939
-    ],
-    "median_minutes_to_detect": 7.0,
-    "minutes_to_detect_ci": [
-      6.0,
-      9.0
-    ],
-    "false_alarms_per_day": 1.316,
-    "false_alarms_per_day_ci": [
-      0.563,
-      2.055
-    ],
-    "window_precision": 0.3591,
-    "window_recall": 0.3959,
-    "window_f1": 0.3766,
-    "roc_auc": 0.7789,
-    "pr_auc": 0.378,
-    "threshold": 8.778149,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "naive_residual",
-    "events": 197,
-    "detection_rate": 0.5482,
-    "detection_rate_ci": [
-      0.4772,
-      0.6142
-    ],
-    "median_minutes_to_detect": 7.5,
-    "minutes_to_detect_ci": [
-      7.0,
-      9.0
-    ],
-    "false_alarms_per_day": 1.316,
-    "false_alarms_per_day_ci": [
-      0.582,
-      2.037
-    ],
-    "window_precision": 0.3582,
-    "window_recall": 0.3983,
-    "window_f1": 0.3772,
-    "roc_auc": 0.7788,
-    "pr_auc": 0.3791,
-    "threshold": 12.291543,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "isolation_forest",
-    "events": 197,
-    "detection_rate": 0.4924,
-    "detection_rate_ci": [
-      0.4264,
-      0.5584
-    ],
-    "median_minutes_to_detect": 10.0,
-    "minutes_to_detect_ci": [
-      9.0,
-      16.0
-    ],
-    "false_alarms_per_day": 1.151,
-    "false_alarms_per_day_ci": [
-      0.727,
-      1.564
-    ],
-    "window_precision": 0.2468,
-    "window_recall": 0.3893,
-    "window_f1": 0.3021,
-    "roc_auc": 0.7418,
-    "pr_auc": 0.3067,
-    "threshold": 0.007908,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[normal_val_loss]",
-    "events": 197,
-    "detection_rate": 0.6294,
-    "detection_rate_ci": [
-      0.5633,
-      0.6954
-    ],
-    "median_minutes_to_detect": 9.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.705,
-    "false_alarms_per_day_ci": [
-      0.857,
-      2.596
-    ],
-    "window_precision": 0.2927,
-    "window_recall": 0.545,
-    "window_f1": 0.3808,
-    "roc_auc": 0.8042,
-    "pr_auc": 0.3318,
-    "threshold": 0.564408,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[val_pr_auc]",
-    "events": 197,
-    "detection_rate": 0.6294,
-    "detection_rate_ci": [
-      0.5633,
-      0.6954
-    ],
-    "median_minutes_to_detect": 9.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.705,
-    "false_alarms_per_day_ci": [
-      0.857,
-      2.596
-    ],
-    "window_precision": 0.2927,
-    "window_recall": 0.545,
-    "window_f1": 0.3808,
-    "roc_auc": 0.8042,
-    "pr_auc": 0.3318,
-    "threshold": 0.564408,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[mixed_val_loss]",
-    "events": 197,
-    "detection_rate": 0.6294,
-    "detection_rate_ci": [
-      0.5633,
-      0.6954
-    ],
-    "median_minutes_to_detect": 9.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.705,
-    "false_alarms_per_day_ci": [
-      0.857,
-      2.596
-    ],
-    "window_precision": 0.2927,
-    "window_recall": 0.545,
-    "window_f1": 0.3808,
-    "roc_auc": 0.8042,
-    "pr_auc": 0.3318,
-    "threshold": 0.564408,
-    "source": "smd",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "max_deviation",
-    "events": 101,
-    "detection_rate": 0.4356,
-    "detection_rate_ci": [
-      0.3366,
-      0.5347
-    ],
-    "median_minutes_to_detect": 9.0,
-    "minutes_to_detect_ci": [
-      6.0,
-      19.0
-    ],
-    "false_alarms_per_day": 0.982,
-    "false_alarms_per_day_ci": [
-      0.305,
-      1.781
-    ],
-    "window_precision": 0.2593,
-    "window_recall": 0.2787,
-    "window_f1": 0.2686,
-    "roc_auc": 0.7634,
-    "pr_auc": 0.2852,
-    "threshold": 11.952661,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "window_spread",
-    "events": 101,
-    "detection_rate": 0.6139,
-    "detection_rate_ci": [
-      0.5149,
-      0.703
-    ],
-    "median_minutes_to_detect": 10.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      13.0
-    ],
-    "false_alarms_per_day": 1.19,
-    "false_alarms_per_day_ci": [
-      0.479,
-      2.056
-    ],
-    "window_precision": 0.1349,
-    "window_recall": 0.4192,
-    "window_f1": 0.2041,
-    "roc_auc": 0.7301,
-    "pr_auc": 0.248,
-    "threshold": 1.901135,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "ewma_residual",
-    "events": 101,
-    "detection_rate": 0.7525,
-    "detection_rate_ci": [
-      0.6634,
-      0.8317
-    ],
-    "median_minutes_to_detect": 8.5,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.646,
-    "false_alarms_per_day_ci": [
-      0.721,
-      2.639
-    ],
-    "window_precision": 0.135,
-    "window_recall": 0.4996,
-    "window_f1": 0.2125,
-    "roc_auc": 0.7484,
-    "pr_auc": 0.2762,
-    "threshold": 4.710619,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "naive_residual",
-    "events": 101,
-    "detection_rate": 0.7327,
-    "detection_rate_ci": [
-      0.6436,
-      0.8119
-    ],
-    "median_minutes_to_detect": 8.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.626,
-    "false_alarms_per_day_ci": [
-      0.69,
-      2.605
-    ],
-    "window_precision": 0.1372,
-    "window_recall": 0.5098,
-    "window_f1": 0.2163,
-    "roc_auc": 0.752,
-    "pr_auc": 0.2792,
-    "threshold": 6.949198,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "isolation_forest",
-    "events": 101,
-    "detection_rate": 0.495,
-    "detection_rate_ci": [
-      0.396,
-      0.5842
-    ],
-    "median_minutes_to_detect": 10.0,
-    "minutes_to_detect_ci": [
-      7.5,
-      10.5
-    ],
-    "false_alarms_per_day": 1.978,
-    "false_alarms_per_day_ci": [
-      1.013,
-      3.069
-    ],
-    "window_precision": 0.1481,
-    "window_recall": 0.4106,
-    "window_f1": 0.2177,
-    "roc_auc": 0.6875,
-    "pr_auc": 0.2351,
-    "threshold": -0.002026,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[normal_val_loss]",
-    "events": 101,
-    "detection_rate": 0.5545,
-    "detection_rate_ci": [
-      0.4554,
-      0.6535
-    ],
-    "median_minutes_to_detect": 9.5,
-    "minutes_to_detect_ci": [
-      7.0,
-      11.0
-    ],
-    "false_alarms_per_day": 1.509,
-    "false_alarms_per_day_ci": [
-      0.701,
-      2.233
-    ],
-    "window_precision": 0.1321,
-    "window_recall": 0.3849,
-    "window_f1": 0.1967,
-    "roc_auc": 0.6957,
-    "pr_auc": 0.2418,
-    "threshold": 0.639323,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[val_pr_auc]",
-    "events": 101,
-    "detection_rate": 0.5248,
-    "detection_rate_ci": [
-      0.4255,
-      0.6238
-    ],
-    "median_minutes_to_detect": 9.0,
-    "minutes_to_detect_ci": [
-      7.0,
-      10.0
-    ],
-    "false_alarms_per_day": 1.555,
-    "false_alarms_per_day_ci": [
-      0.7,
-      2.369
-    ],
-    "window_precision": 0.1437,
-    "window_recall": 0.3825,
-    "window_f1": 0.209,
-    "roc_auc": 0.6972,
-    "pr_auc": 0.2457,
-    "threshold": 0.644248,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[mixed_val_loss]",
-    "events": 101,
-    "detection_rate": 0.5545,
-    "detection_rate_ci": [
-      0.4554,
-      0.6535
-    ],
-    "median_minutes_to_detect": 9.5,
-    "minutes_to_detect_ci": [
-      7.0,
-      11.0
-    ],
-    "false_alarms_per_day": 1.509,
-    "false_alarms_per_day_ci": [
-      0.701,
-      2.233
-    ],
-    "window_precision": 0.1321,
-    "window_recall": 0.3849,
-    "window_f1": 0.1967,
-    "roc_auc": 0.6957,
-    "pr_auc": 0.2418,
-    "threshold": 0.639323,
-    "source": "smd",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "max_deviation",
-    "events": 186,
-    "detection_rate": 0.8656,
-    "detection_rate_ci": [
-      0.8172,
-      0.914
-    ],
-    "median_minutes_to_detect": 24.0,
-    "minutes_to_detect_ci": [
-      20.0,
-      27.0
-    ],
-    "false_alarms_per_day": 0.969,
-    "false_alarms_per_day_ci": [
-      0.802,
-      1.162
-    ],
-    "window_precision": 0.6781,
-    "window_recall": 0.6932,
-    "window_f1": 0.6856,
-    "roc_auc": 0.8635,
-    "pr_auc": 0.7888,
-    "threshold": 2.118882,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "window_spread",
-    "events": 186,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 19.0,
-    "minutes_to_detect_ci": [
-      17.0,
-      21.0
-    ],
-    "false_alarms_per_day": 0.781,
-    "false_alarms_per_day_ci": [
-      0.608,
-      0.948
-    ],
-    "window_precision": 0.9499,
-    "window_recall": 0.7828,
-    "window_f1": 0.8583,
-    "roc_auc": 0.8988,
-    "pr_auc": 0.8672,
-    "threshold": 0.288965,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "ewma_residual",
-    "events": 186,
-    "detection_rate": 0.8118,
-    "detection_rate_ci": [
-      0.7527,
-      0.8656
-    ],
-    "median_minutes_to_detect": 28.0,
-    "minutes_to_detect_ci": [
-      20.0,
-      37.0
-    ],
-    "false_alarms_per_day": 1.355,
-    "false_alarms_per_day_ci": [
-      1.132,
-      1.572
-    ],
-    "window_precision": 0.8262,
-    "window_recall": 0.4544,
-    "window_f1": 0.5863,
-    "roc_auc": 0.7775,
-    "pr_auc": 0.6483,
-    "threshold": 0.650656,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "naive_residual",
-    "events": 186,
-    "detection_rate": 0.5591,
-    "detection_rate_ci": [
-      0.4892,
-      0.629
-    ],
-    "median_minutes_to_detect": 37.0,
-    "minutes_to_detect_ci": [
-      9.0,
-      59.0
-    ],
-    "false_alarms_per_day": 1.025,
-    "false_alarms_per_day_ci": [
-      0.848,
-      1.222
-    ],
-    "window_precision": 0.6124,
-    "window_recall": 0.2995,
-    "window_f1": 0.4022,
-    "roc_auc": 0.6556,
-    "pr_auc": 0.4775,
-    "threshold": 1.10606,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "isolation_forest",
-    "events": 186,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 22.0,
-    "minutes_to_detect_ci": [
-      19.0,
-      27.0
-    ],
-    "false_alarms_per_day": 0.884,
-    "false_alarms_per_day_ci": [
-      0.636,
-      1.13
-    ],
-    "window_precision": 0.8938,
-    "window_recall": 0.7595,
-    "window_f1": 0.8212,
-    "roc_auc": 0.9527,
-    "pr_auc": 0.9027,
-    "threshold": 0.040426,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[normal_val_loss]",
-    "events": 186,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 16.0,
-    "minutes_to_detect_ci": [
-      14.0,
-      18.0
-    ],
-    "false_alarms_per_day": 0.95,
-    "false_alarms_per_day_ci": [
-      0.721,
-      1.217
-    ],
-    "window_precision": 0.9476,
-    "window_recall": 0.9044,
-    "window_f1": 0.9255,
-    "roc_auc": 0.9616,
-    "pr_auc": 0.9482,
-    "threshold": 0.045146,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[val_pr_auc]",
-    "events": 186,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 16.0,
-    "minutes_to_detect_ci": [
-      14.0,
-      18.0
-    ],
-    "false_alarms_per_day": 0.959,
-    "false_alarms_per_day_ci": [
-      0.734,
-      1.202
-    ],
-    "window_precision": 0.9486,
-    "window_recall": 0.9034,
-    "window_f1": 0.9254,
-    "roc_auc": 0.9622,
-    "pr_auc": 0.9487,
-    "threshold": 0.047035,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "lstm_autoencoder[mixed_val_loss]",
-    "events": 186,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 17.0,
-    "minutes_to_detect_ci": [
-      14.0,
-      19.0
-    ],
-    "false_alarms_per_day": 1.101,
-    "false_alarms_per_day_ci": [
-      0.854,
-      1.376
-    ],
-    "window_precision": 0.939,
-    "window_recall": 0.9017,
-    "window_f1": 0.92,
-    "roc_auc": 0.96,
-    "pr_auc": 0.9466,
-    "threshold": 0.045266,
-    "source": "synthetic",
-    "strategy": "time_based"
-  },
-  {
-    "detector": "max_deviation",
-    "events": 180,
-    "detection_rate": 0.8444,
-    "detection_rate_ci": [
-      0.7889,
-      0.8944
-    ],
-    "median_minutes_to_detect": 23.5,
-    "minutes_to_detect_ci": [
-      20.0,
-      29.0
-    ],
-    "false_alarms_per_day": 0.769,
-    "false_alarms_per_day_ci": [
-      0.524,
-      1.018
-    ],
-    "window_precision": 0.6106,
-    "window_recall": 0.6613,
-    "window_f1": 0.6349,
-    "roc_auc": 0.8439,
-    "pr_auc": 0.7538,
-    "threshold": 2.12346,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "window_spread",
-    "events": 180,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 18.0,
-    "minutes_to_detect_ci": [
-      16.0,
-      20.0
-    ],
-    "false_alarms_per_day": 0.834,
-    "false_alarms_per_day_ci": [
-      0.649,
-      1.034
-    ],
-    "window_precision": 0.9442,
-    "window_recall": 0.7829,
-    "window_f1": 0.856,
-    "roc_auc": 0.9053,
-    "pr_auc": 0.8666,
-    "threshold": 0.290738,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "ewma_residual",
-    "events": 180,
-    "detection_rate": 0.7833,
-    "detection_rate_ci": [
-      0.7222,
-      0.8389
-    ],
-    "median_minutes_to_detect": 25.0,
-    "minutes_to_detect_ci": [
-      18.0,
-      38.0
-    ],
-    "false_alarms_per_day": 0.844,
-    "false_alarms_per_day_ci": [
-      0.72,
-      0.974
-    ],
-    "window_precision": 0.867,
-    "window_recall": 0.404,
-    "window_f1": 0.5512,
-    "roc_auc": 0.7704,
-    "pr_auc": 0.6255,
-    "threshold": 0.676085,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "naive_residual",
-    "events": 180,
-    "detection_rate": 0.6167,
-    "detection_rate_ci": [
-      0.5444,
-      0.6833
-    ],
-    "median_minutes_to_detect": 31.0,
-    "minutes_to_detect_ci": [
-      10.0,
-      52.0
-    ],
-    "false_alarms_per_day": 1.143,
-    "false_alarms_per_day_ci": [
-      0.99,
-      1.296
-    ],
-    "window_precision": 0.5608,
-    "window_recall": 0.2965,
-    "window_f1": 0.3879,
-    "roc_auc": 0.6589,
-    "pr_auc": 0.4597,
-    "threshold": 1.108413,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "isolation_forest",
-    "events": 180,
-    "detection_rate": 0.95,
-    "detection_rate_ci": [
-      0.9167,
-      0.9778
-    ],
-    "median_minutes_to_detect": 24.0,
-    "minutes_to_detect_ci": [
-      20.0,
-      28.0
-    ],
-    "false_alarms_per_day": 1.05,
-    "false_alarms_per_day_ci": [
-      0.565,
-      1.634
-    ],
-    "window_precision": 0.8301,
-    "window_recall": 0.6938,
-    "window_f1": 0.7558,
-    "roc_auc": 0.9308,
-    "pr_auc": 0.8226,
-    "threshold": 0.045811,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[normal_val_loss]",
-    "events": 180,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 15.0,
-    "minutes_to_detect_ci": [
-      12.0,
-      17.0
-    ],
-    "false_alarms_per_day": 1.162,
-    "false_alarms_per_day_ci": [
-      0.537,
-      1.985
-    ],
-    "window_precision": 0.9186,
-    "window_recall": 0.8965,
-    "window_f1": 0.9074,
-    "roc_auc": 0.9601,
-    "pr_auc": 0.9413,
-    "threshold": 0.045971,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[val_pr_auc]",
-    "events": 180,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 15.0,
-    "minutes_to_detect_ci": [
-      12.0,
-      17.0
-    ],
-    "false_alarms_per_day": 1.162,
-    "false_alarms_per_day_ci": [
-      0.537,
-      1.985
-    ],
-    "window_precision": 0.9186,
-    "window_recall": 0.8965,
-    "window_f1": 0.9074,
-    "roc_auc": 0.9601,
-    "pr_auc": 0.9413,
-    "threshold": 0.045971,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  },
-  {
-    "detector": "lstm_autoencoder[mixed_val_loss]",
-    "events": 180,
-    "detection_rate": 1.0,
-    "detection_rate_ci": [
-      1.0,
-      1.0
-    ],
-    "median_minutes_to_detect": 15.0,
-    "minutes_to_detect_ci": [
-      12.0,
-      17.0
-    ],
-    "false_alarms_per_day": 1.162,
-    "false_alarms_per_day_ci": [
-      0.537,
-      1.985
-    ],
-    "window_precision": 0.9186,
-    "window_recall": 0.8965,
-    "window_f1": 0.9074,
-    "roc_auc": 0.9601,
-    "pr_auc": 0.9413,
-    "threshold": 0.045971,
-    "source": "synthetic",
-    "strategy": "held_out_series"
-  }
-]
+{
+  "budget": 1.0,
+  "rows": [
+    {
+      "detector": "max_deviation",
+      "events": 197,
+      "detection_rate": 0.5076,
+      "detection_rate_ci": [
+        0.4365,
+        0.5787
+      ],
+      "median_minutes_to_detect": 8.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        9.5
+      ],
+      "false_alarms_per_day": 0.991,
+      "false_alarms_per_day_ci": [
+        0.374,
+        1.602
+      ],
+      "pages_per_day": 1.818,
+      "pages_per_day_ci": [
+        0.545,
+        3.318
+      ],
+      "alarm_duty": 0.0679,
+      "worst_alarm_duty": 0.727,
+      "pre_alarmed_share": 0.17,
+      "fresh_detection_rate": 0.4213,
+      "curve_auc": 0.5427,
+      "window_precision": 0.3739,
+      "window_recall": 0.3911,
+      "window_f1": 0.3823,
+      "roc_auc": 0.7829,
+      "pr_auc": 0.3811,
+      "threshold": 15.79154,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6017,
+      "delta_vs_incumbent": 0.0102,
+      "delta_vs_incumbent_ci": [
+        -0.0305,
+        0.0508
+      ]
+    },
+    {
+      "detector": "window_spread",
+      "events": 197,
+      "detection_rate": 0.4975,
+      "detection_rate_ci": [
+        0.4264,
+        0.5636
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        12.0
+      ],
+      "false_alarms_per_day": 0.957,
+      "false_alarms_per_day_ci": [
+        0.379,
+        1.563
+      ],
+      "pages_per_day": 2.078,
+      "pages_per_day_ci": [
+        0.666,
+        3.629
+      ],
+      "alarm_duty": 0.0734,
+      "worst_alarm_duty": 0.6315,
+      "pre_alarmed_share": 0.1327,
+      "fresh_detection_rate": 0.4315,
+      "curve_auc": 0.489,
+      "window_precision": 0.3545,
+      "window_recall": 0.389,
+      "window_f1": 0.3709,
+      "roc_auc": 0.7735,
+      "pr_auc": 0.3429,
+      "threshold": 2.912222,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.4833,
+      "delta_vs_incumbent": null
+    },
+    {
+      "detector": "ewma_residual",
+      "events": 197,
+      "detection_rate": 0.5025,
+      "detection_rate_ci": [
+        0.4364,
+        0.5736
+      ],
+      "median_minutes_to_detect": 8.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        9.0
+      ],
+      "false_alarms_per_day": 1.19,
+      "false_alarms_per_day_ci": [
+        0.479,
+        1.915
+      ],
+      "pages_per_day": 1.697,
+      "pages_per_day_ci": [
+        0.618,
+        2.822
+      ],
+      "alarm_duty": 0.0615,
+      "worst_alarm_duty": 0.3458,
+      "pre_alarmed_share": 0.1414,
+      "fresh_detection_rate": 0.4315,
+      "curve_auc": 0.5391,
+      "window_precision": 0.371,
+      "window_recall": 0.3497,
+      "window_f1": 0.36,
+      "roc_auc": 0.7789,
+      "pr_auc": 0.378,
+      "threshold": 9.865828,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6079,
+      "delta_vs_incumbent": 0.0051,
+      "delta_vs_incumbent_ci": [
+        -0.0406,
+        0.0508
+      ]
+    },
+    {
+      "detector": "naive_residual",
+      "events": 197,
+      "detection_rate": 0.5076,
+      "detection_rate_ci": [
+        0.4365,
+        0.5787
+      ],
+      "median_minutes_to_detect": 8.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        9.5
+      ],
+      "false_alarms_per_day": 1.16,
+      "false_alarms_per_day_ci": [
+        0.464,
+        1.864
+      ],
+      "pages_per_day": 1.575,
+      "pages_per_day_ci": [
+        0.597,
+        2.629
+      ],
+      "alarm_duty": 0.059,
+      "worst_alarm_duty": 0.3421,
+      "pre_alarmed_share": 0.14,
+      "fresh_detection_rate": 0.4365,
+      "curve_auc": 0.5529,
+      "window_precision": 0.3841,
+      "window_recall": 0.3549,
+      "window_f1": 0.3689,
+      "roc_auc": 0.7788,
+      "pr_auc": 0.3791,
+      "threshold": 14.05769,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6094,
+      "delta_vs_incumbent": 0.0102,
+      "delta_vs_incumbent_ci": [
+        -0.0355,
+        0.0558
+      ]
+    },
+    {
+      "detector": "isolation_forest",
+      "events": 197,
+      "detection_rate": 0.3503,
+      "detection_rate_ci": [
+        0.2893,
+        0.4162
+      ],
+      "median_minutes_to_detect": 18.0,
+      "minutes_to_detect_ci": [
+        13.0,
+        21.0
+      ],
+      "false_alarms_per_day": 0.532,
+      "false_alarms_per_day_ci": [
+        0.235,
+        0.871
+      ],
+      "pages_per_day": 1.662,
+      "pages_per_day_ci": [
+        0.534,
+        3.169
+      ],
+      "alarm_duty": 0.0619,
+      "worst_alarm_duty": 0.707,
+      "pre_alarmed_share": 0.1594,
+      "fresh_detection_rate": 0.2944,
+      "curve_auc": 0.3864,
+      "window_precision": 0.3227,
+      "window_recall": 0.2846,
+      "window_f1": 0.3024,
+      "roc_auc": 0.7418,
+      "pr_auc": 0.3067,
+      "threshold": 0.047751,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.3697,
+      "delta_vs_incumbent": -0.1472,
+      "delta_vs_incumbent_ci": [
+        -0.2234,
+        -0.066
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[normal_val_loss]",
+      "events": 197,
+      "detection_rate": 0.5635,
+      "detection_rate_ci": [
+        0.4973,
+        0.6294
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        11.0
+      ],
+      "false_alarms_per_day": 1.043,
+      "false_alarms_per_day_ci": [
+        0.508,
+        1.62
+      ],
+      "pages_per_day": 2.043,
+      "pages_per_day_ci": [
+        0.77,
+        3.737
+      ],
+      "alarm_duty": 0.068,
+      "worst_alarm_duty": 0.768,
+      "pre_alarmed_share": 0.1802,
+      "fresh_detection_rate": 0.4619,
+      "curve_auc": 0.5306,
+      "window_precision": 0.4151,
+      "window_recall": 0.4656,
+      "window_f1": 0.4389,
+      "roc_auc": 0.8042,
+      "pr_auc": 0.3318,
+      "threshold": 0.805346,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5141,
+      "delta_vs_incumbent": 0.066,
+      "delta_vs_incumbent_ci": [
+        0.0254,
+        0.1117
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[val_pr_auc]",
+      "events": 197,
+      "detection_rate": 0.5635,
+      "detection_rate_ci": [
+        0.4973,
+        0.6294
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        11.0
+      ],
+      "false_alarms_per_day": 1.043,
+      "false_alarms_per_day_ci": [
+        0.508,
+        1.62
+      ],
+      "pages_per_day": 2.043,
+      "pages_per_day_ci": [
+        0.77,
+        3.737
+      ],
+      "alarm_duty": 0.068,
+      "worst_alarm_duty": 0.768,
+      "pre_alarmed_share": 0.1802,
+      "fresh_detection_rate": 0.4619,
+      "curve_auc": 0.5306,
+      "window_precision": 0.4151,
+      "window_recall": 0.4656,
+      "window_f1": 0.4389,
+      "roc_auc": 0.8042,
+      "pr_auc": 0.3318,
+      "threshold": 0.805346,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5141,
+      "delta_vs_incumbent": 0.066,
+      "delta_vs_incumbent_ci": [
+        0.0254,
+        0.1117
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[mixed_val_loss]",
+      "events": 197,
+      "detection_rate": 0.5635,
+      "detection_rate_ci": [
+        0.4973,
+        0.6294
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        11.0
+      ],
+      "false_alarms_per_day": 1.043,
+      "false_alarms_per_day_ci": [
+        0.508,
+        1.62
+      ],
+      "pages_per_day": 2.043,
+      "pages_per_day_ci": [
+        0.77,
+        3.737
+      ],
+      "alarm_duty": 0.068,
+      "worst_alarm_duty": 0.768,
+      "pre_alarmed_share": 0.1802,
+      "fresh_detection_rate": 0.4619,
+      "curve_auc": 0.5306,
+      "window_precision": 0.4151,
+      "window_recall": 0.4656,
+      "window_f1": 0.4389,
+      "roc_auc": 0.8042,
+      "pr_auc": 0.3318,
+      "threshold": 0.805346,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5141,
+      "delta_vs_incumbent": 0.066,
+      "delta_vs_incumbent_ci": [
+        0.0254,
+        0.1117
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]",
+      "events": 197,
+      "detection_rate": 0.5635,
+      "detection_rate_ci": [
+        0.4924,
+        0.6294
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        9.0,
+        13.0
+      ],
+      "false_alarms_per_day": 0.97,
+      "false_alarms_per_day_ci": [
+        0.447,
+        1.489
+      ],
+      "pages_per_day": 1.731,
+      "pages_per_day_ci": [
+        0.54,
+        3.402
+      ],
+      "alarm_duty": 0.0523,
+      "worst_alarm_duty": 0.7944,
+      "pre_alarmed_share": 0.1081,
+      "fresh_detection_rate": 0.5025,
+      "curve_auc": 0.5691,
+      "window_precision": 0.444,
+      "window_recall": 0.4028,
+      "window_f1": 0.4224,
+      "roc_auc": 0.8238,
+      "pr_auc": 0.3872,
+      "threshold": 0.384746,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5737,
+      "delta_vs_incumbent": 0.066,
+      "delta_vs_incumbent_ci": [
+        0.0152,
+        0.1168
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]+naive_residual",
+      "events": 197,
+      "detection_rate": 0.5939,
+      "detection_rate_ci": [
+        0.5279,
+        0.6599
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        8.0,
+        12.0
+      ],
+      "false_alarms_per_day": 0.987,
+      "false_alarms_per_day_ci": [
+        0.375,
+        1.62
+      ],
+      "pages_per_day": 1.653,
+      "pages_per_day_ci": [
+        0.504,
+        3.149
+      ],
+      "alarm_duty": 0.0606,
+      "worst_alarm_duty": 0.6761,
+      "pre_alarmed_share": 0.1197,
+      "fresh_detection_rate": 0.5228,
+      "curve_auc": 0.6214,
+      "window_precision": 0.4376,
+      "window_recall": 0.455,
+      "window_f1": 0.4462,
+      "roc_auc": 0.8285,
+      "pr_auc": 0.4418,
+      "threshold": 2.840521,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6861,
+      "delta_vs_incumbent": 0.0964,
+      "delta_vs_incumbent_ci": [
+        0.0558,
+        0.1421
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]",
+      "events": 197,
+      "detection_rate": 0.5838,
+      "detection_rate_ci": [
+        0.5127,
+        0.6548
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        9.0,
+        14.0
+      ],
+      "false_alarms_per_day": 1.121,
+      "false_alarms_per_day_ci": [
+        0.516,
+        1.679
+      ],
+      "pages_per_day": 1.935,
+      "pages_per_day_ci": [
+        0.654,
+        3.556
+      ],
+      "alarm_duty": 0.0579,
+      "worst_alarm_duty": 0.7925,
+      "pre_alarmed_share": 0.087,
+      "fresh_detection_rate": 0.533,
+      "curve_auc": 0.5684,
+      "window_precision": 0.4217,
+      "window_recall": 0.4074,
+      "window_f1": 0.4144,
+      "roc_auc": 0.822,
+      "pr_auc": 0.3796,
+      "threshold": 0.386645,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5726,
+      "delta_vs_incumbent": 0.0863,
+      "delta_vs_incumbent_ci": [
+        0.0355,
+        0.1371
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]+naive_residual",
+      "events": 197,
+      "detection_rate": 0.5888,
+      "detection_rate_ci": [
+        0.5228,
+        0.6548
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        8.0,
+        11.0
+      ],
+      "false_alarms_per_day": 1.03,
+      "false_alarms_per_day_ci": [
+        0.404,
+        1.649
+      ],
+      "pages_per_day": 1.736,
+      "pages_per_day_ci": [
+        0.558,
+        3.279
+      ],
+      "alarm_duty": 0.0632,
+      "worst_alarm_duty": 0.6906,
+      "pre_alarmed_share": 0.1293,
+      "fresh_detection_rate": 0.5127,
+      "curve_auc": 0.6184,
+      "window_precision": 0.4302,
+      "window_recall": 0.4605,
+      "window_f1": 0.4448,
+      "roc_auc": 0.8278,
+      "pr_auc": 0.4404,
+      "threshold": 2.802497,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6842,
+      "delta_vs_incumbent": 0.0914,
+      "delta_vs_incumbent_ci": [
+        0.0508,
+        0.1371
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]",
+      "events": 197,
+      "detection_rate": 0.5888,
+      "detection_rate_ci": [
+        0.5178,
+        0.6548
+      ],
+      "median_minutes_to_detect": 11.0,
+      "minutes_to_detect_ci": [
+        9.0,
+        14.0
+      ],
+      "false_alarms_per_day": 1.013,
+      "false_alarms_per_day_ci": [
+        0.479,
+        1.546
+      ],
+      "pages_per_day": 1.762,
+      "pages_per_day_ci": [
+        0.59,
+        3.377
+      ],
+      "alarm_duty": 0.0541,
+      "worst_alarm_duty": 0.7834,
+      "pre_alarmed_share": 0.0776,
+      "fresh_detection_rate": 0.5431,
+      "curve_auc": 0.5688,
+      "window_precision": 0.4344,
+      "window_recall": 0.4007,
+      "window_f1": 0.4169,
+      "roc_auc": 0.8207,
+      "pr_auc": 0.3825,
+      "threshold": 0.386752,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.5818,
+      "delta_vs_incumbent": 0.0914,
+      "delta_vs_incumbent_ci": [
+        0.0406,
+        0.1472
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]+naive_residual",
+      "events": 197,
+      "detection_rate": 0.5939,
+      "detection_rate_ci": [
+        0.5279,
+        0.6599
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        8.0,
+        11.0
+      ],
+      "false_alarms_per_day": 1.078,
+      "false_alarms_per_day_ci": [
+        0.413,
+        1.756
+      ],
+      "pages_per_day": 1.718,
+      "pages_per_day_ci": [
+        0.535,
+        3.262
+      ],
+      "alarm_duty": 0.0617,
+      "worst_alarm_duty": 0.6652,
+      "pre_alarmed_share": 0.1282,
+      "fresh_detection_rate": 0.5178,
+      "curve_auc": 0.6227,
+      "window_precision": 0.4346,
+      "window_recall": 0.4575,
+      "window_f1": 0.4458,
+      "roc_auc": 0.826,
+      "pr_auc": 0.4401,
+      "threshold": 2.772984,
+      "source": "smd",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6853,
+      "delta_vs_incumbent": 0.0964,
+      "delta_vs_incumbent_ci": [
+        0.0558,
+        0.1421
+      ]
+    },
+    {
+      "detector": "max_deviation",
+      "events": 101,
+      "detection_rate": 0.3762,
+      "detection_rate_ci": [
+        0.2871,
+        0.4752
+      ],
+      "median_minutes_to_detect": 7.5,
+      "minutes_to_detect_ci": [
+        6.0,
+        24.5
+      ],
+      "false_alarms_per_day": 0.761,
+      "false_alarms_per_day_ci": [
+        0.162,
+        1.506
+      ],
+      "pages_per_day": 1.086,
+      "pages_per_day_ci": [
+        0.188,
+        2.165
+      ],
+      "alarm_duty": 0.0357,
+      "worst_alarm_duty": 0.1315,
+      "pre_alarmed_share": 0.1053,
+      "fresh_detection_rate": 0.3366,
+      "curve_auc": 0.555,
+      "window_precision": 0.2902,
+      "window_recall": 0.2451,
+      "window_f1": 0.2658,
+      "roc_auc": 0.7634,
+      "pr_auc": 0.2852,
+      "threshold": 14.629043,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.6939,
+      "delta_vs_incumbent": -0.2277,
+      "delta_vs_incumbent_ci": [
+        -0.3168,
+        -0.1485
+      ]
+    },
+    {
+      "detector": "window_spread",
+      "events": 101,
+      "detection_rate": 0.604,
+      "detection_rate_ci": [
+        0.505,
+        0.6931
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        19.0
+      ],
+      "false_alarms_per_day": 1.106,
+      "false_alarms_per_day_ci": [
+        0.428,
+        1.947
+      ],
+      "pages_per_day": 4.04,
+      "pages_per_day_ci": [
+        0.813,
+        9.385
+      ],
+      "alarm_duty": 0.1555,
+      "worst_alarm_duty": 0.9991,
+      "pre_alarmed_share": 0.1967,
+      "fresh_detection_rate": 0.4851,
+      "curve_auc": 0.4541,
+      "window_precision": 0.131,
+      "window_recall": 0.3934,
+      "window_f1": 0.1966,
+      "roc_auc": 0.7301,
+      "pr_auc": 0.248,
+      "threshold": 1.981645,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8075,
+      "delta_vs_incumbent": null
+    },
+    {
+      "detector": "ewma_residual",
+      "events": 101,
+      "detection_rate": 0.7129,
+      "detection_rate_ci": [
+        0.6238,
+        0.802
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        10.0
+      ],
+      "false_alarms_per_day": 2.186,
+      "false_alarms_per_day_ci": [
+        0.872,
+        3.824
+      ],
+      "pages_per_day": 4.222,
+      "pages_per_day_ci": [
+        1.186,
+        8.648
+      ],
+      "alarm_duty": 0.1483,
+      "worst_alarm_duty": 0.6975,
+      "pre_alarmed_share": 0.2222,
+      "fresh_detection_rate": 0.5545,
+      "curve_auc": 0.5341,
+      "window_precision": 0.1555,
+      "window_recall": 0.4582,
+      "window_f1": 0.2322,
+      "roc_auc": 0.7484,
+      "pr_auc": 0.2762,
+      "threshold": 5.038563,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8874,
+      "delta_vs_incumbent": 0.1089,
+      "delta_vs_incumbent_ci": [
+        0.0297,
+        0.1782
+      ]
+    },
+    {
+      "detector": "naive_residual",
+      "events": 101,
+      "detection_rate": 0.6832,
+      "detection_rate_ci": [
+        0.5842,
+        0.7723
+      ],
+      "median_minutes_to_detect": 9.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        10.0
+      ],
+      "false_alarms_per_day": 1.952,
+      "false_alarms_per_day_ci": [
+        0.865,
+        3.212
+      ],
+      "pages_per_day": 3.74,
+      "pages_per_day_ci": [
+        1.197,
+        7.228
+      ],
+      "alarm_duty": 0.1384,
+      "worst_alarm_duty": 0.5994,
+      "pre_alarmed_share": 0.1884,
+      "fresh_detection_rate": 0.5545,
+      "curve_auc": 0.5487,
+      "window_precision": 0.1663,
+      "window_recall": 0.4637,
+      "window_f1": 0.2448,
+      "roc_auc": 0.752,
+      "pr_auc": 0.2792,
+      "threshold": 7.569065,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.881,
+      "delta_vs_incumbent": 0.0792,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.1584
+      ]
+    },
+    {
+      "detector": "isolation_forest",
+      "events": 101,
+      "detection_rate": 0.3069,
+      "detection_rate_ci": [
+        0.2178,
+        0.396
+      ],
+      "median_minutes_to_detect": 17.0,
+      "minutes_to_detect_ci": [
+        13.0,
+        30.0
+      ],
+      "false_alarms_per_day": 0.371,
+      "false_alarms_per_day_ci": [
+        0.091,
+        0.691
+      ],
+      "pages_per_day": 0.982,
+      "pages_per_day_ci": [
+        0.092,
+        2.223
+      ],
+      "alarm_duty": 0.0351,
+      "worst_alarm_duty": 0.2207,
+      "pre_alarmed_share": 0.0645,
+      "fresh_detection_rate": 0.2871,
+      "curve_auc": 0.3949,
+      "window_precision": 0.2651,
+      "window_recall": 0.2123,
+      "window_f1": 0.2358,
+      "roc_auc": 0.6875,
+      "pr_auc": 0.2351,
+      "threshold": 0.05209,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.2609,
+      "delta_vs_incumbent": -0.297,
+      "delta_vs_incumbent_ci": [
+        -0.4158,
+        -0.1879
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[normal_val_loss]",
+      "events": 101,
+      "detection_rate": 0.1881,
+      "detection_rate_ci": [
+        0.1089,
+        0.2574
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.0,
+        57.0
+      ],
+      "false_alarms_per_day": 0.02,
+      "false_alarms_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "pages_per_day": 0.02,
+      "pages_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "alarm_duty": 0.0004,
+      "worst_alarm_duty": 0.0027,
+      "pre_alarmed_share": 0.0,
+      "fresh_detection_rate": 0.1881,
+      "curve_auc": 0.4169,
+      "window_precision": 0.9448,
+      "window_recall": 0.1069,
+      "window_f1": 0.1921,
+      "roc_auc": 0.6957,
+      "pr_auc": 0.2418,
+      "threshold": 3.180813,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.496,
+      "delta_vs_incumbent": -0.4158,
+      "delta_vs_incumbent_ci": [
+        -0.5149,
+        -0.3168
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[val_pr_auc]",
+      "events": 101,
+      "detection_rate": 0.1881,
+      "detection_rate_ci": [
+        0.1089,
+        0.2574
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.0,
+        57.0
+      ],
+      "false_alarms_per_day": 0.02,
+      "false_alarms_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "pages_per_day": 0.02,
+      "pages_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "alarm_duty": 0.0004,
+      "worst_alarm_duty": 0.0027,
+      "pre_alarmed_share": 0.0,
+      "fresh_detection_rate": 0.1881,
+      "curve_auc": 0.4169,
+      "window_precision": 0.9444,
+      "window_recall": 0.1062,
+      "window_f1": 0.1909,
+      "roc_auc": 0.6972,
+      "pr_auc": 0.2457,
+      "threshold": 3.19465,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.4945,
+      "delta_vs_incumbent": -0.4158,
+      "delta_vs_incumbent_ci": [
+        -0.5149,
+        -0.3168
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[mixed_val_loss]",
+      "events": 101,
+      "detection_rate": 0.1881,
+      "detection_rate_ci": [
+        0.1089,
+        0.2574
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.0,
+        57.0
+      ],
+      "false_alarms_per_day": 0.02,
+      "false_alarms_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "pages_per_day": 0.02,
+      "pages_per_day_ci": [
+        0.0,
+        0.049
+      ],
+      "alarm_duty": 0.0004,
+      "worst_alarm_duty": 0.0027,
+      "pre_alarmed_share": 0.0,
+      "fresh_detection_rate": 0.1881,
+      "curve_auc": 0.4169,
+      "window_precision": 0.9448,
+      "window_recall": 0.1069,
+      "window_f1": 0.1921,
+      "roc_auc": 0.6957,
+      "pr_auc": 0.2418,
+      "threshold": 3.180813,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.496,
+      "delta_vs_incumbent": -0.4158,
+      "delta_vs_incumbent_ci": [
+        -0.5149,
+        -0.3168
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]",
+      "events": 101,
+      "detection_rate": 0.6535,
+      "detection_rate_ci": [
+        0.5644,
+        0.7426
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        8.0,
+        16.0
+      ],
+      "false_alarms_per_day": 1.815,
+      "false_alarms_per_day_ci": [
+        0.749,
+        3.121
+      ],
+      "pages_per_day": 3.467,
+      "pages_per_day_ci": [
+        1.202,
+        6.311
+      ],
+      "alarm_duty": 0.1133,
+      "worst_alarm_duty": 0.4638,
+      "pre_alarmed_share": 0.2727,
+      "fresh_detection_rate": 0.4752,
+      "curve_auc": 0.5217,
+      "window_precision": 0.2039,
+      "window_recall": 0.4871,
+      "window_f1": 0.2875,
+      "roc_auc": 0.7719,
+      "pr_auc": 0.3143,
+      "threshold": 0.30977,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.7455,
+      "delta_vs_incumbent": 0.0495,
+      "delta_vs_incumbent_ci": [
+        -0.0396,
+        0.1386
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]+naive_residual",
+      "events": 101,
+      "detection_rate": 0.6436,
+      "detection_rate_ci": [
+        0.5446,
+        0.7327
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        6.0,
+        12.0
+      ],
+      "false_alarms_per_day": 1.496,
+      "false_alarms_per_day_ci": [
+        0.606,
+        2.659
+      ],
+      "pages_per_day": 2.563,
+      "pages_per_day_ci": [
+        0.729,
+        4.936
+      ],
+      "alarm_duty": 0.0882,
+      "worst_alarm_duty": 0.3895,
+      "pre_alarmed_share": 0.1385,
+      "fresh_detection_rate": 0.5545,
+      "curve_auc": 0.5996,
+      "window_precision": 0.2339,
+      "window_recall": 0.452,
+      "window_f1": 0.3083,
+      "roc_auc": 0.8035,
+      "pr_auc": 0.3495,
+      "threshold": 1.65378,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8641,
+      "delta_vs_incumbent": 0.0396,
+      "delta_vs_incumbent_ci": [
+        -0.02,
+        0.1089
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]",
+      "events": 101,
+      "detection_rate": 0.6535,
+      "detection_rate_ci": [
+        0.5644,
+        0.7426
+      ],
+      "median_minutes_to_detect": 10.5,
+      "minutes_to_detect_ci": [
+        8.5,
+        17.0
+      ],
+      "false_alarms_per_day": 1.782,
+      "false_alarms_per_day_ci": [
+        0.669,
+        3.192
+      ],
+      "pages_per_day": 3.493,
+      "pages_per_day_ci": [
+        1.108,
+        6.335
+      ],
+      "alarm_duty": 0.1152,
+      "worst_alarm_duty": 0.4366,
+      "pre_alarmed_share": 0.2576,
+      "fresh_detection_rate": 0.4851,
+      "curve_auc": 0.5198,
+      "window_precision": 0.1916,
+      "window_recall": 0.4582,
+      "window_f1": 0.2702,
+      "roc_auc": 0.7714,
+      "pr_auc": 0.3153,
+      "threshold": 0.318614,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.7401,
+      "delta_vs_incumbent": 0.0495,
+      "delta_vs_incumbent_ci": [
+        -0.0396,
+        0.1386
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]+naive_residual",
+      "events": 101,
+      "detection_rate": 0.6634,
+      "detection_rate_ci": [
+        0.5644,
+        0.7525
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        13.0
+      ],
+      "false_alarms_per_day": 1.626,
+      "false_alarms_per_day_ci": [
+        0.638,
+        2.827
+      ],
+      "pages_per_day": 2.674,
+      "pages_per_day_ci": [
+        0.796,
+        5.028
+      ],
+      "alarm_duty": 0.0889,
+      "worst_alarm_duty": 0.3815,
+      "pre_alarmed_share": 0.1493,
+      "fresh_detection_rate": 0.5644,
+      "curve_auc": 0.6031,
+      "window_precision": 0.2316,
+      "window_recall": 0.4496,
+      "window_f1": 0.3057,
+      "roc_auc": 0.7999,
+      "pr_auc": 0.3491,
+      "threshold": 1.685266,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8596,
+      "delta_vs_incumbent": 0.0594,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.1188
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]",
+      "events": 101,
+      "detection_rate": 0.6634,
+      "detection_rate_ci": [
+        0.5743,
+        0.7525
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        8.0,
+        19.0
+      ],
+      "false_alarms_per_day": 1.952,
+      "false_alarms_per_day_ci": [
+        0.635,
+        3.653
+      ],
+      "pages_per_day": 3.734,
+      "pages_per_day_ci": [
+        1.165,
+        6.819
+      ],
+      "alarm_duty": 0.1214,
+      "worst_alarm_duty": 0.4406,
+      "pre_alarmed_share": 0.2239,
+      "fresh_detection_rate": 0.5149,
+      "curve_auc": 0.519,
+      "window_precision": 0.1879,
+      "window_recall": 0.4715,
+      "window_f1": 0.2687,
+      "roc_auc": 0.7712,
+      "pr_auc": 0.3146,
+      "threshold": 0.317777,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.7545,
+      "delta_vs_incumbent": 0.0594,
+      "delta_vs_incumbent_ci": [
+        -0.0297,
+        0.1485
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]+naive_residual",
+      "events": 101,
+      "detection_rate": 0.6733,
+      "detection_rate_ci": [
+        0.5842,
+        0.7624
+      ],
+      "median_minutes_to_detect": 10.0,
+      "minutes_to_detect_ci": [
+        7.0,
+        12.5
+      ],
+      "false_alarms_per_day": 1.75,
+      "false_alarms_per_day_ci": [
+        0.726,
+        3.005
+      ],
+      "pages_per_day": 2.94,
+      "pages_per_day_ci": [
+        0.976,
+        5.346
+      ],
+      "alarm_duty": 0.0987,
+      "worst_alarm_duty": 0.3984,
+      "pre_alarmed_share": 0.1471,
+      "fresh_detection_rate": 0.5743,
+      "curve_auc": 0.5985,
+      "window_precision": 0.2201,
+      "window_recall": 0.4676,
+      "window_f1": 0.2994,
+      "roc_auc": 0.8008,
+      "pr_auc": 0.3471,
+      "threshold": 1.619409,
+      "source": "smd",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8671,
+      "delta_vs_incumbent": 0.0693,
+      "delta_vs_incumbent_ci": [
+        0.0099,
+        0.1386
+      ]
+    },
+    {
+      "detector": "max_deviation",
+      "events": 186,
+      "detection_rate": 0.8333,
+      "detection_rate_ci": [
+        0.7742,
+        0.8871
+      ],
+      "median_minutes_to_detect": 27.0,
+      "minutes_to_detect_ci": [
+        25.0,
+        30.0
+      ],
+      "false_alarms_per_day": 0.452,
+      "false_alarms_per_day_ci": [
+        0.316,
+        0.609
+      ],
+      "pages_per_day": 0.649,
+      "pages_per_day_ci": [
+        0.436,
+        0.888
+      ],
+      "alarm_duty": 0.0235,
+      "worst_alarm_duty": 0.375,
+      "pre_alarmed_share": 0.0323,
+      "fresh_detection_rate": 0.8065,
+      "curve_auc": 0.8663,
+      "window_precision": 0.8625,
+      "window_recall": 0.6496,
+      "window_f1": 0.741,
+      "roc_auc": 0.8635,
+      "pr_auc": 0.7888,
+      "threshold": 2.301486,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.9053,
+      "delta_vs_incumbent": -0.1667,
+      "delta_vs_incumbent_ci": [
+        -0.2258,
+        -0.1129
+      ]
+    },
+    {
+      "detector": "window_spread",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 19.0,
+      "minutes_to_detect_ci": [
+        17.0,
+        21.0
+      ],
+      "false_alarms_per_day": 0.781,
+      "false_alarms_per_day_ci": [
+        0.608,
+        0.948
+      ],
+      "pages_per_day": 0.781,
+      "pages_per_day_ci": [
+        0.608,
+        0.948
+      ],
+      "alarm_duty": 0.0094,
+      "worst_alarm_duty": 0.087,
+      "pre_alarmed_share": 0.0161,
+      "fresh_detection_rate": 0.9839,
+      "curve_auc": 1.0,
+      "window_precision": 0.9499,
+      "window_recall": 0.7828,
+      "window_f1": 0.8583,
+      "roc_auc": 0.8988,
+      "pr_auc": 0.8672,
+      "threshold": 0.288965,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": null
+    },
+    {
+      "detector": "ewma_residual",
+      "events": 186,
+      "detection_rate": 0.8118,
+      "detection_rate_ci": [
+        0.7527,
+        0.8656
+      ],
+      "median_minutes_to_detect": 28.0,
+      "minutes_to_detect_ci": [
+        20.0,
+        37.0
+      ],
+      "false_alarms_per_day": 1.355,
+      "false_alarms_per_day_ci": [
+        1.132,
+        1.572
+      ],
+      "pages_per_day": 1.373,
+      "pages_per_day_ci": [
+        1.146,
+        1.594
+      ],
+      "alarm_duty": 0.0217,
+      "worst_alarm_duty": 0.2,
+      "pre_alarmed_share": 0.0132,
+      "fresh_detection_rate": 0.8011,
+      "curve_auc": 0.8297,
+      "window_precision": 0.8262,
+      "window_recall": 0.4544,
+      "window_f1": 0.5863,
+      "roc_auc": 0.7775,
+      "pr_auc": 0.6483,
+      "threshold": 0.650656,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.8349,
+      "delta_vs_incumbent": -0.1882,
+      "delta_vs_incumbent_ci": [
+        -0.2473,
+        -0.1344
+      ]
+    },
+    {
+      "detector": "naive_residual",
+      "events": 186,
+      "detection_rate": 0.5591,
+      "detection_rate_ci": [
+        0.4892,
+        0.629
+      ],
+      "median_minutes_to_detect": 37.0,
+      "minutes_to_detect_ci": [
+        9.0,
+        59.0
+      ],
+      "false_alarms_per_day": 1.025,
+      "false_alarms_per_day_ci": [
+        0.848,
+        1.222
+      ],
+      "pages_per_day": 1.044,
+      "pages_per_day_ci": [
+        0.857,
+        1.246
+      ],
+      "alarm_duty": 0.043,
+      "worst_alarm_duty": 0.2353,
+      "pre_alarmed_share": 0.0673,
+      "fresh_detection_rate": 0.5215,
+      "curve_auc": 0.6316,
+      "window_precision": 0.6124,
+      "window_recall": 0.2995,
+      "window_f1": 0.4022,
+      "roc_auc": 0.6556,
+      "pr_auc": 0.4775,
+      "threshold": 1.10606,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.6294,
+      "delta_vs_incumbent": -0.4409,
+      "delta_vs_incumbent_ci": [
+        -0.5108,
+        -0.371
+      ]
+    },
+    {
+      "detector": "isolation_forest",
+      "events": 186,
+      "detection_rate": 0.9892,
+      "detection_rate_ci": [
+        0.9731,
+        1.0
+      ],
+      "median_minutes_to_detect": 22.5,
+      "minutes_to_detect_ci": [
+        19.0,
+        27.0
+      ],
+      "false_alarms_per_day": 0.753,
+      "false_alarms_per_day_ci": [
+        0.52,
+        0.981
+      ],
+      "pages_per_day": 0.837,
+      "pages_per_day_ci": [
+        0.559,
+        1.09
+      ],
+      "alarm_duty": 0.0175,
+      "worst_alarm_duty": 0.2647,
+      "pre_alarmed_share": 0.0217,
+      "fresh_detection_rate": 0.9677,
+      "curve_auc": 0.9955,
+      "window_precision": 0.9063,
+      "window_recall": 0.7442,
+      "window_f1": 0.8173,
+      "roc_auc": 0.9527,
+      "pr_auc": 0.9027,
+      "threshold": 0.042681,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.9973,
+      "delta_vs_incumbent": -0.0108,
+      "delta_vs_incumbent_ci": [
+        -0.0269,
+        0.0
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[normal_val_loss]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 16.0,
+      "minutes_to_detect_ci": [
+        14.0,
+        18.0
+      ],
+      "false_alarms_per_day": 0.95,
+      "false_alarms_per_day_ci": [
+        0.721,
+        1.217
+      ],
+      "pages_per_day": 0.95,
+      "pages_per_day_ci": [
+        0.721,
+        1.217
+      ],
+      "alarm_duty": 0.0113,
+      "worst_alarm_duty": 0.1452,
+      "pre_alarmed_share": 0.0108,
+      "fresh_detection_rate": 0.9892,
+      "curve_auc": 1.0,
+      "window_precision": 0.9476,
+      "window_recall": 0.9044,
+      "window_f1": 0.9255,
+      "roc_auc": 0.9616,
+      "pr_auc": 0.9482,
+      "threshold": 0.045146,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[val_pr_auc]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 16.0,
+      "minutes_to_detect_ci": [
+        14.0,
+        18.0
+      ],
+      "false_alarms_per_day": 0.959,
+      "false_alarms_per_day_ci": [
+        0.734,
+        1.202
+      ],
+      "pages_per_day": 0.969,
+      "pages_per_day_ci": [
+        0.743,
+        1.217
+      ],
+      "alarm_duty": 0.0111,
+      "worst_alarm_duty": 0.1613,
+      "pre_alarmed_share": 0.0161,
+      "fresh_detection_rate": 0.9839,
+      "curve_auc": 1.0,
+      "window_precision": 0.9486,
+      "window_recall": 0.9034,
+      "window_f1": 0.9254,
+      "roc_auc": 0.9622,
+      "pr_auc": 0.9487,
+      "threshold": 0.047035,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[mixed_val_loss]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 17.0,
+      "minutes_to_detect_ci": [
+        14.0,
+        19.0
+      ],
+      "false_alarms_per_day": 1.101,
+      "false_alarms_per_day_ci": [
+        0.854,
+        1.376
+      ],
+      "pages_per_day": 1.101,
+      "pages_per_day_ci": [
+        0.854,
+        1.376
+      ],
+      "alarm_duty": 0.0133,
+      "worst_alarm_duty": 0.1935,
+      "pre_alarmed_share": 0.0108,
+      "fresh_detection_rate": 0.9892,
+      "curve_auc": 1.0,
+      "window_precision": 0.939,
+      "window_recall": 0.9017,
+      "window_f1": 0.92,
+      "roc_auc": 0.96,
+      "pr_auc": 0.9466,
+      "threshold": 0.045266,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.5,
+      "minutes_to_detect_ci": [
+        10.0,
+        19.5
+      ],
+      "false_alarms_per_day": 1.044,
+      "false_alarms_per_day_ci": [
+        0.835,
+        1.27
+      ],
+      "pages_per_day": 1.044,
+      "pages_per_day_ci": [
+        0.835,
+        1.27
+      ],
+      "alarm_duty": 0.0156,
+      "worst_alarm_duty": 0.1212,
+      "pre_alarmed_share": 0.0215,
+      "fresh_detection_rate": 0.9785,
+      "curve_auc": 1.0,
+      "window_precision": 0.9205,
+      "window_recall": 0.7941,
+      "window_f1": 0.8526,
+      "roc_auc": 0.9147,
+      "pr_auc": 0.8812,
+      "threshold": 0.015137,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]+naive_residual",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.5,
+        19.5
+      ],
+      "false_alarms_per_day": 1.251,
+      "false_alarms_per_day_ci": [
+        1.046,
+        1.464
+      ],
+      "pages_per_day": 1.251,
+      "pages_per_day_ci": [
+        1.046,
+        1.464
+      ],
+      "alarm_duty": 0.0372,
+      "worst_alarm_duty": 0.2319,
+      "pre_alarmed_share": 0.0376,
+      "fresh_detection_rate": 0.9624,
+      "curve_auc": 1.0,
+      "window_precision": 0.8277,
+      "window_recall": 0.7888,
+      "window_f1": 0.8078,
+      "roc_auc": 0.9028,
+      "pr_auc": 0.867,
+      "threshold": 1.909898,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.5,
+      "minutes_to_detect_ci": [
+        10.0,
+        18.0
+      ],
+      "false_alarms_per_day": 1.063,
+      "false_alarms_per_day_ci": [
+        0.859,
+        1.289
+      ],
+      "pages_per_day": 1.063,
+      "pages_per_day_ci": [
+        0.859,
+        1.289
+      ],
+      "alarm_duty": 0.0159,
+      "worst_alarm_duty": 0.1159,
+      "pre_alarmed_share": 0.0215,
+      "fresh_detection_rate": 0.9785,
+      "curve_auc": 1.0,
+      "window_precision": 0.9188,
+      "window_recall": 0.7948,
+      "window_f1": 0.8523,
+      "roc_auc": 0.9151,
+      "pr_auc": 0.8818,
+      "threshold": 0.015075,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]+naive_residual",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.5,
+        19.0
+      ],
+      "false_alarms_per_day": 1.279,
+      "false_alarms_per_day_ci": [
+        1.061,
+        1.501
+      ],
+      "pages_per_day": 1.279,
+      "pages_per_day_ci": [
+        1.061,
+        1.501
+      ],
+      "alarm_duty": 0.0379,
+      "worst_alarm_duty": 0.2464,
+      "pre_alarmed_share": 0.0376,
+      "fresh_detection_rate": 0.9624,
+      "curve_auc": 1.0,
+      "window_precision": 0.8256,
+      "window_recall": 0.7901,
+      "window_f1": 0.8075,
+      "roc_auc": 0.9028,
+      "pr_auc": 0.8678,
+      "threshold": 1.909898,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        10.0,
+        18.0
+      ],
+      "false_alarms_per_day": 1.11,
+      "false_alarms_per_day_ci": [
+        0.903,
+        1.336
+      ],
+      "pages_per_day": 1.11,
+      "pages_per_day_ci": [
+        0.903,
+        1.336
+      ],
+      "alarm_duty": 0.0163,
+      "worst_alarm_duty": 0.1159,
+      "pre_alarmed_share": 0.0215,
+      "fresh_detection_rate": 0.9785,
+      "curve_auc": 1.0,
+      "window_precision": 0.9166,
+      "window_recall": 0.7911,
+      "window_f1": 0.8493,
+      "roc_auc": 0.9139,
+      "pr_auc": 0.88,
+      "threshold": 0.015149,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.9998,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]+naive_residual",
+      "events": 186,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        10.5,
+        19.0
+      ],
+      "false_alarms_per_day": 1.176,
+      "false_alarms_per_day_ci": [
+        0.981,
+        1.389
+      ],
+      "pages_per_day": 1.176,
+      "pages_per_day_ci": [
+        0.981,
+        1.389
+      ],
+      "alarm_duty": 0.0357,
+      "worst_alarm_duty": 0.2319,
+      "pre_alarmed_share": 0.0323,
+      "fresh_detection_rate": 0.9677,
+      "curve_auc": 1.0,
+      "window_precision": 0.833,
+      "window_recall": 0.7841,
+      "window_f1": 0.8078,
+      "roc_auc": 0.902,
+      "pr_auc": 0.8658,
+      "threshold": 1.933049,
+      "source": "synthetic",
+      "strategy": "time_based",
+      "val_curve_auc": 0.9997,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "max_deviation",
+      "events": 180,
+      "detection_rate": 0.8167,
+      "detection_rate_ci": [
+        0.7556,
+        0.8722
+      ],
+      "median_minutes_to_detect": 28.0,
+      "minutes_to_detect_ci": [
+        24.0,
+        31.0
+      ],
+      "false_alarms_per_day": 0.412,
+      "false_alarms_per_day_ci": [
+        0.195,
+        0.652
+      ],
+      "pages_per_day": 0.872,
+      "pages_per_day_ci": [
+        0.346,
+        1.479
+      ],
+      "alarm_duty": 0.0346,
+      "worst_alarm_duty": 0.2354,
+      "pre_alarmed_share": 0.0272,
+      "fresh_detection_rate": 0.7944,
+      "curve_auc": 0.8417,
+      "window_precision": 0.7896,
+      "window_recall": 0.6147,
+      "window_f1": 0.6913,
+      "roc_auc": 0.8439,
+      "pr_auc": 0.7538,
+      "threshold": 2.318334,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8736,
+      "delta_vs_incumbent": -0.1833,
+      "delta_vs_incumbent_ci": [
+        -0.2444,
+        -0.1278
+      ]
+    },
+    {
+      "detector": "window_spread",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 18.0,
+      "minutes_to_detect_ci": [
+        16.0,
+        20.0
+      ],
+      "false_alarms_per_day": 0.834,
+      "false_alarms_per_day_ci": [
+        0.649,
+        1.034
+      ],
+      "pages_per_day": 0.834,
+      "pages_per_day_ci": [
+        0.649,
+        1.034
+      ],
+      "alarm_duty": 0.0098,
+      "worst_alarm_duty": 0.0312,
+      "pre_alarmed_share": 0.0111,
+      "fresh_detection_rate": 0.9889,
+      "curve_auc": 1.0,
+      "window_precision": 0.9442,
+      "window_recall": 0.7829,
+      "window_f1": 0.856,
+      "roc_auc": 0.9053,
+      "pr_auc": 0.8666,
+      "threshold": 0.290738,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": null
+    },
+    {
+      "detector": "ewma_residual",
+      "events": 180,
+      "detection_rate": 0.7833,
+      "detection_rate_ci": [
+        0.7222,
+        0.8389
+      ],
+      "median_minutes_to_detect": 25.0,
+      "minutes_to_detect_ci": [
+        18.0,
+        38.0
+      ],
+      "false_alarms_per_day": 0.844,
+      "false_alarms_per_day_ci": [
+        0.72,
+        0.974
+      ],
+      "pages_per_day": 0.844,
+      "pages_per_day_ci": [
+        0.72,
+        0.974
+      ],
+      "alarm_duty": 0.0131,
+      "worst_alarm_duty": 0.0312,
+      "pre_alarmed_share": 0.0,
+      "fresh_detection_rate": 0.7833,
+      "curve_auc": 0.8432,
+      "window_precision": 0.867,
+      "window_recall": 0.404,
+      "window_f1": 0.5512,
+      "roc_auc": 0.7704,
+      "pr_auc": 0.6255,
+      "threshold": 0.676085,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.8188,
+      "delta_vs_incumbent": -0.2167,
+      "delta_vs_incumbent_ci": [
+        -0.2778,
+        -0.1611
+      ]
+    },
+    {
+      "detector": "naive_residual",
+      "events": 180,
+      "detection_rate": 0.6167,
+      "detection_rate_ci": [
+        0.5444,
+        0.6833
+      ],
+      "median_minutes_to_detect": 31.0,
+      "minutes_to_detect_ci": [
+        10.0,
+        52.0
+      ],
+      "false_alarms_per_day": 1.143,
+      "false_alarms_per_day_ci": [
+        0.99,
+        1.296
+      ],
+      "pages_per_day": 1.162,
+      "pages_per_day_ci": [
+        1.001,
+        1.322
+      ],
+      "alarm_duty": 0.049,
+      "worst_alarm_duty": 0.0875,
+      "pre_alarmed_share": 0.0721,
+      "fresh_detection_rate": 0.5722,
+      "curve_auc": 0.6997,
+      "window_precision": 0.5608,
+      "window_recall": 0.2965,
+      "window_f1": 0.3879,
+      "roc_auc": 0.6589,
+      "pr_auc": 0.4597,
+      "threshold": 1.108413,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.6424,
+      "delta_vs_incumbent": -0.3833,
+      "delta_vs_incumbent_ci": [
+        -0.4556,
+        -0.3167
+      ]
+    },
+    {
+      "detector": "isolation_forest",
+      "events": 180,
+      "detection_rate": 0.9444,
+      "detection_rate_ci": [
+        0.9056,
+        0.9778
+      ],
+      "median_minutes_to_detect": 25.0,
+      "minutes_to_detect_ci": [
+        21.0,
+        31.0
+      ],
+      "false_alarms_per_day": 0.881,
+      "false_alarms_per_day_ci": [
+        0.421,
+        1.446
+      ],
+      "pages_per_day": 1.143,
+      "pages_per_day_ci": [
+        0.523,
+        1.873
+      ],
+      "alarm_duty": 0.0249,
+      "worst_alarm_duty": 0.2833,
+      "pre_alarmed_share": 0.0353,
+      "fresh_detection_rate": 0.9111,
+      "curve_auc": 0.9708,
+      "window_precision": 0.8496,
+      "window_recall": 0.6663,
+      "window_f1": 0.7469,
+      "roc_auc": 0.9308,
+      "pr_auc": 0.8226,
+      "threshold": 0.049333,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 0.9906,
+      "delta_vs_incumbent": -0.0556,
+      "delta_vs_incumbent_ci": [
+        -0.0944,
+        -0.0222
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[normal_val_loss]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        12.0,
+        17.0
+      ],
+      "false_alarms_per_day": 1.162,
+      "false_alarms_per_day_ci": [
+        0.537,
+        1.985
+      ],
+      "pages_per_day": 1.256,
+      "pages_per_day_ci": [
+        0.587,
+        2.114
+      ],
+      "alarm_duty": 0.0168,
+      "worst_alarm_duty": 0.1368,
+      "pre_alarmed_share": 0.0056,
+      "fresh_detection_rate": 0.9944,
+      "curve_auc": 1.0,
+      "window_precision": 0.9186,
+      "window_recall": 0.8965,
+      "window_f1": 0.9074,
+      "roc_auc": 0.9601,
+      "pr_auc": 0.9413,
+      "threshold": 0.045971,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[val_pr_auc]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        12.0,
+        17.0
+      ],
+      "false_alarms_per_day": 1.162,
+      "false_alarms_per_day_ci": [
+        0.537,
+        1.985
+      ],
+      "pages_per_day": 1.256,
+      "pages_per_day_ci": [
+        0.587,
+        2.114
+      ],
+      "alarm_duty": 0.0168,
+      "worst_alarm_duty": 0.1368,
+      "pre_alarmed_share": 0.0056,
+      "fresh_detection_rate": 0.9944,
+      "curve_auc": 1.0,
+      "window_precision": 0.9186,
+      "window_recall": 0.8965,
+      "window_f1": 0.9074,
+      "roc_auc": 0.9601,
+      "pr_auc": 0.9413,
+      "threshold": 0.045971,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "lstm_autoencoder[mixed_val_loss]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 15.0,
+      "minutes_to_detect_ci": [
+        12.0,
+        17.0
+      ],
+      "false_alarms_per_day": 1.162,
+      "false_alarms_per_day_ci": [
+        0.537,
+        1.985
+      ],
+      "pages_per_day": 1.256,
+      "pages_per_day_ci": [
+        0.587,
+        2.114
+      ],
+      "alarm_duty": 0.0168,
+      "worst_alarm_duty": 0.1368,
+      "pre_alarmed_share": 0.0056,
+      "fresh_detection_rate": 0.9944,
+      "curve_auc": 1.0,
+      "window_precision": 0.9186,
+      "window_recall": 0.8965,
+      "window_f1": 0.9074,
+      "roc_auc": 0.9601,
+      "pr_auc": 0.9413,
+      "threshold": 0.045971,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.5,
+      "minutes_to_detect_ci": [
+        12.0,
+        17.5
+      ],
+      "false_alarms_per_day": 1.087,
+      "false_alarms_per_day_ci": [
+        0.879,
+        1.3
+      ],
+      "pages_per_day": 1.087,
+      "pages_per_day_ci": [
+        0.879,
+        1.3
+      ],
+      "alarm_duty": 0.015,
+      "worst_alarm_duty": 0.0343,
+      "pre_alarmed_share": 0.0278,
+      "fresh_detection_rate": 0.9722,
+      "curve_auc": 1.0,
+      "window_precision": 0.9179,
+      "window_recall": 0.7943,
+      "window_f1": 0.8517,
+      "roc_auc": 0.915,
+      "pr_auc": 0.8793,
+      "threshold": 0.014414,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s0]+naive_residual",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        11.0,
+        17.5
+      ],
+      "false_alarms_per_day": 1.05,
+      "false_alarms_per_day_ci": [
+        0.897,
+        1.194
+      ],
+      "pages_per_day": 1.05,
+      "pages_per_day_ci": [
+        0.897,
+        1.194
+      ],
+      "alarm_duty": 0.0329,
+      "worst_alarm_duty": 0.0616,
+      "pre_alarmed_share": 0.0444,
+      "fresh_detection_rate": 0.9556,
+      "curve_auc": 1.0,
+      "window_precision": 0.8345,
+      "window_recall": 0.7873,
+      "window_f1": 0.8102,
+      "roc_auc": 0.909,
+      "pr_auc": 0.8669,
+      "threshold": 1.969976,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        12.0,
+        16.0
+      ],
+      "false_alarms_per_day": 1.143,
+      "false_alarms_per_day_ci": [
+        0.93,
+        1.351
+      ],
+      "pages_per_day": 1.143,
+      "pages_per_day_ci": [
+        0.93,
+        1.351
+      ],
+      "alarm_duty": 0.0152,
+      "worst_alarm_duty": 0.0343,
+      "pre_alarmed_share": 0.0278,
+      "fresh_detection_rate": 0.9722,
+      "curve_auc": 1.0,
+      "window_precision": 0.9174,
+      "window_recall": 0.8003,
+      "window_f1": 0.8549,
+      "roc_auc": 0.9165,
+      "pr_auc": 0.8815,
+      "threshold": 0.014375,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s1]+naive_residual",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        11.0,
+        16.0
+      ],
+      "false_alarms_per_day": 1.05,
+      "false_alarms_per_day_ci": [
+        0.893,
+        1.205
+      ],
+      "pages_per_day": 1.05,
+      "pages_per_day_ci": [
+        0.893,
+        1.205
+      ],
+      "alarm_duty": 0.0328,
+      "worst_alarm_duty": 0.0616,
+      "pre_alarmed_share": 0.0389,
+      "fresh_detection_rate": 0.9611,
+      "curve_auc": 1.0,
+      "window_precision": 0.8359,
+      "window_recall": 0.792,
+      "window_f1": 0.8133,
+      "roc_auc": 0.9106,
+      "pr_auc": 0.8696,
+      "threshold": 1.977461,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        11.5,
+        16.0
+      ],
+      "false_alarms_per_day": 1.078,
+      "false_alarms_per_day_ci": [
+        0.851,
+        1.308
+      ],
+      "pages_per_day": 1.078,
+      "pages_per_day_ci": [
+        0.851,
+        1.308
+      ],
+      "alarm_duty": 0.0144,
+      "worst_alarm_duty": 0.0365,
+      "pre_alarmed_share": 0.0278,
+      "fresh_detection_rate": 0.9722,
+      "curve_auc": 1.0,
+      "window_precision": 0.9215,
+      "window_recall": 0.7983,
+      "window_f1": 0.8555,
+      "roc_auc": 0.9162,
+      "pr_auc": 0.8808,
+      "threshold": 0.014489,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "detector": "conv_autoencoder[s2]+naive_residual",
+      "events": 180,
+      "detection_rate": 1.0,
+      "detection_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "median_minutes_to_detect": 13.0,
+      "minutes_to_detect_ci": [
+        11.0,
+        16.0
+      ],
+      "false_alarms_per_day": 1.068,
+      "false_alarms_per_day_ci": [
+        0.913,
+        1.205
+      ],
+      "pages_per_day": 1.068,
+      "pages_per_day_ci": [
+        0.913,
+        1.205
+      ],
+      "alarm_duty": 0.0324,
+      "worst_alarm_duty": 0.0594,
+      "pre_alarmed_share": 0.0444,
+      "fresh_detection_rate": 0.9556,
+      "curve_auc": 1.0,
+      "window_precision": 0.8372,
+      "window_recall": 0.7906,
+      "window_f1": 0.8132,
+      "roc_auc": 0.9103,
+      "pr_auc": 0.869,
+      "threshold": 1.97459,
+      "source": "synthetic",
+      "strategy": "held_out_series",
+      "val_curve_auc": 1.0,
+      "delta_vs_incumbent": 0.0,
+      "delta_vs_incumbent_ci": [
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

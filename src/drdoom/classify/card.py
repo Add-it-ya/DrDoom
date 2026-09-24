@@ -49,6 +49,19 @@ def _reading_lines(summaries: list[dict]) -> list[str]:
     return [*lines, ""]
 
 
+def _incident_total(summaries: list[dict]) -> str:
+    """How many real incidents the archetypes were derived from, counted, not typed.
+
+    The page once said 325 while the annotation file holds 327; a number in prose drifts
+    as easily as one in a table.
+    """
+    for summary in summaries:
+        support = summary.get("archetype_support")
+        if summary.get("source") == "smd" and support:
+            return f"{sum(support.values())} incidents"
+    return "a few hundred incidents"
+
+
 def render(summaries: list[dict]) -> str:
     lines = [
         TITLE,
@@ -81,8 +94,8 @@ def render(summaries: list[dict]) -> str:
         "",
         "The archetype taxonomy is derived from the annotation file across all incidents, not",
         "from metric values, so it hands the model no signal it could read off its inputs.",
-        "With 325 incidents in total there is not enough data to define the taxonomy on a",
-        "subset and have it stay stable.",
+        f"With {_incident_total(summaries)} in total there is not enough data to define the",
+        "taxonomy on a subset and have it stay stable.",
         "",
     ]
     lines += _reading_lines(summaries)
