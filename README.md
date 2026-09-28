@@ -244,9 +244,10 @@ progressively instead of blocking on one long request.
 investigations newest first (`limit`, `offset`), and the dashboard reopens any of them,
 approval gate included.
 
-The service retrieves with BM25 and the MiniLM encoder fused, the configuration the
-evaluation suite scores. The first start embeds the document corpus, which takes a few
-minutes on a CPU; the matrix is saved beside the corpus and every later start reuses it.
+The service retrieves with BM25 and the MiniLM encoder fused, then reorders the shortlist
+with the cross-encoder: the configuration the evaluation suite scores. The first start
+downloads both models' weights and embeds the document corpus, which takes a few minutes
+on a CPU; the matrix is saved beside the corpus and every later start reuses it.
 
 **Approving requires a credential**, and so does listing incidents; reading one incident
 by its identifier does not, yet. The key maps to a named principal,
@@ -357,13 +358,15 @@ The seam to swap in a real tracer is one function.
 DRDOOM_API_KEYS="you:pick-a-key" GROQ_API_KEY=... docker compose up
 ```
 
-Two stages: the builder installs dependencies and bakes in the document corpus, the
-embedding model and the corpus embeddings, so a cold container answers immediately rather
-than downloading half a gigabyte and embedding thousands of passages while someone waits.
-Torch comes from the CPU-only index — the default wheels carry CUDA libraries worth several
-gigabytes and nothing here uses a GPU. Runs as a non-root user, health-checks the
-application rather than the port, and keeps `state/` on a volume so suspended
-investigations survive a restart.
+Two stages: the builder installs dependencies, bakes in the document corpus, the embedding
+and cross-encoder weights and the corpus embeddings, and trains the root cause classifier,
+so a cold container does not download half a gigabyte or embed thousands of passages while
+someone waits. Measured on the machine this was built on, `/health` answers within 20
+seconds of `docker compose up`, most of it training the conv detector, which the service
+does on every start. Torch comes from the CPU-only index — the default wheels carry CUDA
+libraries worth several gigabytes and nothing here uses a GPU. Runs as a non-root user,
+health-checks the application rather than the port, and keeps `state/` on a volume so
+suspended investigations survive a restart.
 
 ### Security
 
