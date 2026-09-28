@@ -50,6 +50,14 @@ CrossEncoderReranker()"
 # which the runtime stage already copies.
 RUN python -c "from drdoom.api.factory import build_retriever; build_retriever()"
 
+# Train the root cause classifier on generated incidents, with the same fixed seeds as
+# the published card. models/ is not part of the build context, so this is the only way
+# the service gets one; without it every incident reaches diagnosis unclassified.
+# train() rather than the command line, which would also rewrite the card.
+RUN python -c "\
+from drdoom.classify.train import ClassifierConfig, train; \
+train(ClassifierConfig(source='synthetic'))"
+
 
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -61,6 +69,7 @@ WORKDIR /app
 
 COPY --from=builder --chown=drdoom:drdoom /app/.venv /app/.venv
 COPY --from=builder --chown=drdoom:drdoom /app/data/raw/corpus /app/data/raw/corpus
+COPY --from=builder --chown=drdoom:drdoom /app/models /app/models
 COPY --from=builder --chown=drdoom:drdoom /app/.cache/huggingface /home/drdoom/.cache/huggingface
 COPY --chown=drdoom:drdoom src /app/src
 COPY --chown=drdoom:drdoom web /app/web
