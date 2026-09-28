@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any
 
 import numpy as np
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 MAX_CELLS = 10_000
 MAX_SYMPTOMS = 2_000
 TERMINAL = {"complete", "rejected"}
+MAX_PAGE = 100
 
 
 # --- request and response shapes ---------------------------------------------------
@@ -127,6 +128,7 @@ class InvestigationView(BaseModel):
     tokens: int = 0
     usage: dict[str, Any] | None = None
     awaiting: dict[str, Any] | None = None
+    risk: dict[str, Any] | None = None
 
     @classmethod
     def of(cls, investigation: Investigation) -> InvestigationView:
@@ -139,6 +141,7 @@ class InvestigationView(BaseModel):
             diagnosis=state.get("diagnosis"),
             citations=state.get("citations", []),
             plan=state.get("plan"),
+            risk=state.get("risk"),
             decision=state.get("decision"),
             execution=state.get("execution"),
             escalation=state.get("escalation"),
@@ -148,6 +151,39 @@ class InvestigationView(BaseModel):
             usage=investigation.usage,
             awaiting=investigation.pending,
         )
+
+
+class IncidentSummary(BaseModel):
+    """One row of the incident list: enough to pick one out, not the whole record."""
+
+    incident_id: str
+    status: str
+    updated_at: str | None = None
+    is_anomaly: bool
+    likely_cause: str | None = None
+    action: str | None = None
+    risk_level: str | None = None
+
+    @classmethod
+    def of(cls, investigation: Investigation) -> IncidentSummary:
+        state = investigation.state
+        plan = state.get("plan") or {}
+        return cls(
+            incident_id=investigation.thread_id,
+            status=investigation.status,
+            updated_at=investigation.updated_at,
+            is_anomaly=investigation.is_anomaly,
+            likely_cause=(state.get("diagnosis") or {}).get("likely_cause"),
+            action=plan.get("immediate_action"),
+            risk_level=(state.get("risk") or {}).get("final") or plan.get("risk_level"),
+        )
+
+
+class IncidentPage(BaseModel):
+    incidents: list[IncidentSummary]
+    total: int
+    limit: int
+    offset: int
 
 
 # --- application state -------------------------------------------------------------
@@ -387,6 +423,26 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
                 else "routine check, nothing reported"
             ),
         }
+
+    @app.get("/incidents", response_model=IncidentPage)
+    def list_incidents(
+        current: CurrentService,
+        principal: Approver,
+        limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 20,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> IncidentPage:
+        """Recent investigations, newest first. Requires a credential.
+
+        A list of every incident is a map of what has gone wrong and what was done about
+        it, so it is not public even though a single incident still is.
+        """
+        investigations, total = current.investigator.recent(limit, offset)
+        return IncidentPage(
+            incidents=[IncidentSummary.of(item) for item in investigations],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     @app.get("/incidents/{incident_id}", response_model=InvestigationView)
     def read_incident(incident_id: str, current: CurrentService) -> InvestigationView:

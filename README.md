@@ -240,13 +240,16 @@ DRDOOM_API_KEYS="aditya:choose-a-key" uv run uvicorn drdoom.api.main:app
 `POST /investigate` starts a run and returns where it stopped. `POST /investigate/stream`
 delivers the same run a stage at a time over server-sent events, so the dashboard fills in
 progressively instead of blocking on one long request.
-`POST /incidents/{id}/approve` resumes a suspended one.
+`POST /incidents/{id}/approve` resumes a suspended one. `GET /incidents` lists stored
+investigations newest first (`limit`, `offset`), and the dashboard reopens any of them,
+approval gate included.
 
 The service retrieves with BM25 and the MiniLM encoder fused, the configuration the
 evaluation suite scores. The first start embeds the document corpus, which takes a few
 minutes on a CPU; the matrix is saved beside the corpus and every later start reuses it.
 
-**Approving requires a credential**; reading does not. The key maps to a named principal,
+**Approving requires a credential**, and so does listing incidents; reading one incident
+by its identifier does not, yet. The key maps to a named principal,
 because the audit log has to record *who* decided and "someone with a valid key" is not an
 answer a review accepts. An unset key ring accepts nobody — a deployment that forgot to
 configure credentials refuses approvals rather than accepting them from anyone.
