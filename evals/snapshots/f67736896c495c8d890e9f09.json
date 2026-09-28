@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1029,
+  "output_tokens": 423,
+  "text": "{\"summary\":\"Pods are pending because no node has sufficient resources to schedule them, indicating a capacity shortage.\",\"likely_cause\":\"Insufficient node capacity triggered by a traffic spike, leading to exhausted CPU/memory resources.\",\"confidence\":\"medium\",\"next_action\":\"Run `kubectl describe pod <pod>` to confirm the specific resource shortage, verify that node autoscaling is configured correctly, and consider enabling overprovisioning or adding additional nodes to provide buffer capacity for traffic spikes.\"}"
+}

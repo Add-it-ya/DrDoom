@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1809,
+  "output_tokens": 445,
+  "text": "{\"summary\":\"A rollout has been running for 20 minutes without completing, exceeding the default 10\u2011minute progress deadline.\",\"likely_cause\":\"The Deployment has exceeded its .spec.progressDeadlineSeconds, causing the Progressing condition to be set to False with reason ProgressDeadlineExceeded, indicating a stalled rollout.\",\"confidence\":\"high\",\"next_action\":\"Run `kubectl rollout status deployment/<name>` to confirm the error and see the exit code; describe the Deployment with `kubectl describe deployment <name>` and inspect the Progressing condition and Events for details (e.g., readiness probe failures, image pull errors, quota issues); if the issue is identified, fix the underlying problem (adjust probes, image, permissions, etc.) and resume the rollout; optionally rollback to the previous version using `kubectl rollout undo deployment/<name>` for quick recovery; after fixing, re\u2011trigger or resume the rollout then verify success with `kubectl rollout status` and `kubectl get deployment <name>`.\"}"
+}

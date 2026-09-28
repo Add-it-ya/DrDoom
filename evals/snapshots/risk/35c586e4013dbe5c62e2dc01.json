@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 388,
+  "output_tokens": 341,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"The restart could cause the consumer service to go down, dropping in\u2011flight messages and creating a service outage.\",\"reasons\":[\"Potential loss of in\u2011flight messages\",\"Service downtime during pod restart\",\"No rollback plan if restart fails\"]}"
+}

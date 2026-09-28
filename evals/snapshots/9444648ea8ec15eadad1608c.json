@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1339,
+  "output_tokens": 443,
+  "text": "{\n  \"summary\":\"Instances continue receiving traffic even after they have stopped responding to requests.\",\n  \"likely_cause\":\"Pods are not being marked as not ready during termination, so their endpoints remain in service. The EndpointSlice still shows the pod as ready, causing load balancers to route traffic to a non\u2011responsive instance.\",\n  \"confidence\":\"medium\",\n  \"next_action\":\"Check the pod termination flow: verify that terminating Pods have their readiness condition set to false and that the EndpointSlice reflects the terminating state. Ensure readiness probes are correctly configured and that any custom traffic\u2011draining logic uses the `serving` condition. Update the controller or deployment to mark pods as not ready before shutdown so load balancers stop sending traffic.\"\n}"
+}

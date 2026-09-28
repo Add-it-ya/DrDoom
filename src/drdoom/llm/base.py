@@ -8,7 +8,9 @@ particular vendor does better is either mapped into this shape or not used.
 Failures are separated by whether retrying could help. ``LLMUnavailableError`` means the
 provider could not be reached or refused the request, which the caller answers by
 degrading to the retrieved documentation. ``LLMInvalidOutputError`` means the provider
-answered but the answer did not fit the schema, which the caller answers by repairing.
+answered but the answer did not fit the schema, which the caller answers by repairing,
+and by degrading the same way once the bounded repair has also failed. Either way an
+investigation reaches the approval gate rather than stopping without a word.
 """
 
 from __future__ import annotations
@@ -60,10 +62,38 @@ class LLMUnavailableError(LLMError):
 class LLMInvalidOutputError(LLMError):
     """The provider answered, but the answer did not satisfy the schema."""
 
-    def __init__(self, message: str, raw: str = "", attempts: int = 0) -> None:
+    def __init__(
+        self,
+        message: str,
+        raw: str = "",
+        attempts: int = 0,
+        completions: list[Completion] | None = None,
+    ) -> None:
         super().__init__(message)
         self.raw = raw
         self.attempts = attempts
+        # The attempts were answered and billed even though none could be used.
+        self.completions = list(completions or [])
+
+
+Failure = Literal["unavailable", "invalid_output"]
+
+
+def failure_kind(error: LLMError) -> Failure:
+    """Why no usable answer came back: no model, or a model whose answer did not fit."""
+    return "invalid_output" if isinstance(error, LLMInvalidOutputError) else "unavailable"
+
+
+def failure_clause(error: LLMError) -> str:
+    """The same reason as a clause a degraded result can state in its own words."""
+    if isinstance(error, LLMInvalidOutputError):
+        return "the model's answer could not be used"
+    return "no model was available"
+
+
+def spent_on(error: LLMError) -> list[Completion]:
+    """The completions a failed call still cost, so the tokens are not lost from the bill."""
+    return list(getattr(error, "completions", []))
 
 
 class LLMProvider(Protocol):

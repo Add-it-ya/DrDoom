@@ -13,8 +13,9 @@ this answer is traceable to the sources", which is the question an on-call engin
 of a machine-written diagnosis, rather than as a truth score.
 
 It is deterministic and free, which is the reason it and not a model sits in continuous
-integration. An optional judge with a written rubric is available for a deeper look, and
-its verdicts are snapshotted like any other provider call.
+integration. A rubric for a model judge is written below (``JUDGE_RUBRIC`` and
+``judge_prompt``), but nothing runs it yet: every groundedness number this project
+reports is the lexical one.
 """
 
 from __future__ import annotations

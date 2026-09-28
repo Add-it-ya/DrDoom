@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 407,
+  "output_tokens": 417,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"Pods are OOM\u2011killed when memory exceeds 2\u202fGiB, causing a service outage until they restart.\",\"reasons\":[\"limit may be lower than future leak peak\",\"no request adjustment can affect scheduling\",\"pod restarts drop in\u2011flight requests\"]}"
+}

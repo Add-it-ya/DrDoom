@@ -14,6 +14,7 @@ licence, so any retrieved passage can be attributed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -48,18 +49,31 @@ class SourceSpec:
     strip_prefix: str
 
 
+# Each source is pinned to one upstream commit: the head of its main branch when the
+# published results were measured, on 2026-09-02. A branch head moves. By late September
+# the image and CI were fetching a corpus with one more document and a rewritten page, so
+# retrieval changed under them and the evaluation stopped reproducing its own published
+# scores. Moving a pin is a deliberate act that means re-measuring everything that reads
+# the corpus, and CORPUS_DIGEST has to move with it.
+PROMETHEUS_COMMIT = "9ece2ea6375353799f014055bc577d795214aec0"
+KUBERNETES_COMMIT = "00ace9cad04f8c65259fce8c810d3b4440ded9c6"
+
+# What the pinned sources produce, over each document's id, title and text in order.
+# Checked on every download, so an archive that yields anything else is refused.
+CORPUS_DIGEST = "5a8608acb0dc3e796738a22b6b4a859fa9fea98a3d94cc6037bd66c89afe8723"
+
 SOURCES: tuple[SourceSpec, ...] = (
     SourceSpec(
         name="prometheus",
-        archive_url="https://codeload.github.com/prometheus/docs/tar.gz/refs/heads/main",
+        archive_url=f"https://codeload.github.com/prometheus/docs/tar.gz/{PROMETHEUS_COMMIT}",
         include=("docs/", "blog/posts/"),
         licence="Apache-2.0",
-        url_prefix="https://github.com/prometheus/docs/blob/main/",
-        strip_prefix="docs-main/",
+        url_prefix=f"https://github.com/prometheus/docs/blob/{PROMETHEUS_COMMIT}/",
+        strip_prefix=f"docs-{PROMETHEUS_COMMIT}/",
     ),
     SourceSpec(
         name="kubernetes",
-        archive_url="https://codeload.github.com/kubernetes/website/tar.gz/refs/heads/main",
+        archive_url=f"https://codeload.github.com/kubernetes/website/tar.gz/{KUBERNETES_COMMIT}",
         include=(
             "content/en/docs/tasks/",
             "content/en/docs/concepts/cluster-administration/",
@@ -67,8 +81,8 @@ SOURCES: tuple[SourceSpec, ...] = (
             "content/en/docs/reference/kubectl/",
         ),
         licence="CC-BY-4.0",
-        url_prefix="https://github.com/kubernetes/website/blob/main/",
-        strip_prefix="website-main/",
+        url_prefix=f"https://github.com/kubernetes/website/blob/{KUBERNETES_COMMIT}/",
+        strip_prefix=f"website-{KUBERNETES_COMMIT}/",
     ),
 )
 
@@ -162,16 +176,48 @@ def fetch_source(spec: SourceSpec) -> list[Document]:
     return documents
 
 
+def digest(documents: list[Document]) -> str:
+    """A fingerprint of what retrieval reads: each document's id, title and text, in order.
+
+    Links are left out on purpose. They say where a page lives, not what it says, and
+    changing how they are written must not look like a different corpus.
+    """
+    combined = hashlib.sha256()
+    for document in documents:
+        record = "\0".join((document.doc_id, document.title, document.text))
+        combined.update(hashlib.sha256(record.encode("utf-8")).digest())
+    return combined.hexdigest()
+
+
+def verify(documents: list[Document], expected: str | None = None) -> None:
+    """Refuse a corpus that is not the pinned one."""
+    expected = expected or CORPUS_DIGEST
+    found = digest(documents)
+    if found != expected:
+        raise RuntimeError(
+            f"the corpus does not match the pinned revision (digest {found[:12]}, expected "
+            f"{expected[:12]}); every published retrieval and evaluation result was measured "
+            "on the pinned one. Re-fetch it with corpus.download(force=True)."
+        )
+
+
 def download(sources: tuple[SourceSpec, ...] = SOURCES, force: bool = False) -> Path:
-    """Fetch every source and cache the result as one json file."""
+    """Fetch every source, check it is the pinned corpus, and cache it as one json file.
+
+    A corpus already on disk is checked too, so one fetched from a moving branch before
+    the pins existed is refused rather than silently measured.
+    """
     path = corpus_dir() / "documents.json"
     if path.is_file() and not force:
+        verify(load())
         logger.info("corpus already present at %s", path)
         return path
 
     documents: list[Document] = []
     for spec in sources:
         documents.extend(fetch_source(spec))
+    if sources == SOURCES:
+        verify(documents)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

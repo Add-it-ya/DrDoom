@@ -28,8 +28,8 @@ and the honest one.
 
 The archetype taxonomy is derived from the annotation file across all incidents, not
 from metric values, so it hands the model no signal it could read off its inputs.
-With 325 incidents in total there is not enough data to define the taxonomy on a
-subset and have it stay stable.
+With 327 incidents in total there is not enough data to define the
+taxonomy on a subset and have it stay stable.
 
 ## What the numbers say
 

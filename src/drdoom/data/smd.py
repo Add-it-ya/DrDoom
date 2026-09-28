@@ -16,6 +16,7 @@ Two parsing decisions worth stating, both verified against the raw files:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import tarfile
 import urllib.request
@@ -29,8 +30,14 @@ from drdoom.data.schema import AnomalyEvent, MetricSeries, event_id_track, find_
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_URL = "https://codeload.github.com/NetManAIOps/OmniAnomaly/tar.gz/refs/heads/master"
+# Pinned to the commit every detection and classification result was measured on. The
+# repository has not moved since 2021, but a branch head can, and a dataset that changed
+# underneath the published numbers would be found only by their failing to reproduce.
+ARCHIVE_COMMIT = "7fb0e0acf89ea49908896bcc9f9e80fcfff6baf4"
+ARCHIVE_URL = f"https://codeload.github.com/NetManAIOps/OmniAnomaly/tar.gz/{ARCHIVE_COMMIT}"
 ARCHIVE_SUBDIR = "ServerMachineDataset"
+# Every extracted file's path and bytes, checked after each download.
+SMD_DIGEST = "941e335f8eb7c1ed3171d6d1d1877dcb7e19830dbfaff00dbadcc46ce2961ffd"
 SOURCE = "smd"
 N_FEATURES = 38
 
@@ -84,7 +91,27 @@ def download(force: bool = False) -> Path:
             written += 1
 
     logger.info("extracted %d files", written)
+    found = digest(root)
+    if found != SMD_DIGEST:
+        raise RuntimeError(
+            f"the dataset at {root} does not match the pinned revision (digest {found[:12]}, "
+            f"expected {SMD_DIGEST[:12]})"
+        )
     return root
+
+
+def digest(root: Path) -> str:
+    """A fingerprint of every file under ``root``: its path and its bytes.
+
+    Paths are ordered as plain strings, not as ``Path`` objects, because Windows compares
+    paths without regard to case and would put ``LICENSE`` in a different place.
+    """
+    files = {path.relative_to(root).as_posix(): path for path in root.rglob("*") if path.is_file()}
+    combined = hashlib.sha256()
+    for relative in sorted(files):
+        combined.update(relative.encode("utf-8") + b"\0")
+        combined.update(hashlib.sha256(files[relative].read_bytes()).digest())
+    return combined.hexdigest()
 
 
 def _safe_member_path(name: str) -> Path | None:

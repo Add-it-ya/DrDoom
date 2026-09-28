@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 393,
+  "output_tokens": 329,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"The service experiences a multi\u2011minute outage while the deployment rolls back, and if the previous revision is also faulty the outage may be prolonged or cause new errors.\",\"reasons\":[\"Pod restarts cause temporary loss of availability\",\"Rollback may revert needed fixes, worsening the issue\",\"If the prior revision is broken, the service could remain down\"]}"
+}

@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 396,
+  "output_tokens": 351,
+  "text": "{\"risk_level\":\"medium\",\"worst_case\":\"Scaling fails due to insufficient cluster resources, causing pod evictions or unschedulable pods and resulting in a service outage\",\"reasons\":[\"Insufficient node capacity may prevent new replicas from starting\",\"If the root cause isn\u2019t CPU, added load could strain downstream services\",\"Pod startup can briefly disrupt traffic and is not instantly reversible\"]}"
+}

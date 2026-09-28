@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 393,
+  "output_tokens": 366,
+  "text": "{\"risk_level\":\"medium\",\"worst_case\":\"A brief service outage or spike in errors while pods are restarted and not yet ready\",\"reasons\":[\"Rolling restart may temporarily reduce capacity\",\"Readiness probes could misreport readiness causing traffic to hit unhealthy pods\",\"Memory leak may cause new pods to fail quickly, leading to repeated restarts\"]}"
+}

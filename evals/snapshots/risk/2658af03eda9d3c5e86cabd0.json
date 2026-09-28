@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 379,
+  "output_tokens": 199,
+  "text": "{\"risk_level\":\"low\",\"worst_case\":\"No changes are made, so the service continues operating without interruption\",\"reasons\":[\"No commands executed\",\"No configuration or code changes\",\"Only passive monitoring is performed\"]}"
+}

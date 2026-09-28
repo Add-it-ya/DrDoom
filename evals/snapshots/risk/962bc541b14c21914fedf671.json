@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 397,
+  "output_tokens": 382,
+  "text": "{\"risk_level\":\"medium\",\"worst_case\":\"Scaling the deployment could exhaust cluster resources, causing pod evictions or a rolling restart that leads to a temporary outage of the image\u2011resize service\",\"reasons\":[\"may exceed node capacity and trigger OOM or eviction\",\"adds load without fixing underlying issue\",\"scaling may cause a rolling update that briefly disrupts traffic\"]}"
+}

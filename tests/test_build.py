@@ -86,3 +86,47 @@ def test_real_dataset_training_split_is_anomaly_free(tmp_path) -> None:
     assert manifest["splits"]["train"]["events"] == 0
     assert manifest["splits"]["train"]["anomaly_window_rate"] == 0.0
     assert manifest["splits"]["test"]["events"] > 100
+
+
+def labelled_series(n_steps: int, start: int, end: int):
+    import numpy as np
+
+    from drdoom.data.schema import AnomalyEvent, MetricSeries, event_id_track
+
+    events = [AnomalyEvent(event_id=1, source="test", series_id="m", start=start, end=end)]
+    labels = np.zeros(n_steps, dtype=np.int8)
+    labels[start:end] = 1
+    return MetricSeries(
+        source="test",
+        series_id="m",
+        values=np.zeros((n_steps, 2), dtype=np.float32),
+        point_labels=labels,
+        event_ids=event_id_track(n_steps, events),
+        events=events,
+        feature_names=["a", "b"],
+    )
+
+
+def test_an_incident_across_the_midpoint_is_kept_whole() -> None:
+    from drdoom.data.build import halve, orphaned_timesteps
+
+    first, second = halve(labelled_series(1000, 480, 530))
+
+    assert len(first.events) + len(second.events) == 1
+    assert orphaned_timesteps(first) == orphaned_timesteps(second) == 0
+
+
+def test_a_split_that_cuts_an_incident_is_refused() -> None:
+    from drdoom.data.build import check_no_orphans
+    from drdoom.data.splits import SplitResult, slice_series
+
+    labelled = labelled_series(1000, 480, 530)
+    cut = SplitResult(
+        strategy="time_based",
+        train=[],
+        val=[slice_series(labelled, 0, 500)],
+        test=[slice_series(labelled, 500, 1000)],
+    )
+
+    with pytest.raises(ValueError, match="cut through an incident"):
+        check_no_orphans(cut)

@@ -1,8 +1,9 @@
 # Two stages, because the things needed to build this image are much larger than the
-# things needed to run it. The builder installs dependencies and bakes in the two assets
-# that would otherwise be fetched on first request -- the document corpus and the
-# embedding model -- so a cold container answers immediately instead of downloading half
-# a gigabyte while someone waits.
+# things needed to run it. The builder installs dependencies and bakes in the three assets
+# that would otherwise be produced on first request -- the document corpus, the embedding
+# model, and the corpus embedded by that model -- so a cold container answers immediately
+# instead of downloading half a gigabyte and embedding thousands of passages while
+# someone waits.
 #
 # Torch comes from the CPU-only index. The default wheel carries CUDA libraries worth
 # several gigabytes, and nothing here trains on a GPU.
@@ -13,7 +14,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-WORKDIR /build
+# The same directory the runtime stage uses. A virtualenv records its own path in every
+# console script's shebang and in the editable install, so one built elsewhere and copied
+# to /app cannot start: uvicorn would point at an interpreter that does not exist.
+WORKDIR /app
 
 # Dependencies first, as their own layer: application code changes far more often than
 # the lockfile, and this way editing a module does not reinstall torch.
@@ -27,15 +31,32 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Bake the corpus. The archive it comes from is large; what survives is a few megabytes
 # of extracted documentation, so this happens here rather than in the runtime image.
-ENV PATH="/build/.venv/bin:$PATH" \
-    PYTHONPATH=/build/src
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app/src
 RUN python -c "from drdoom.rag import corpus; corpus.download()"
 
-# Bake the sentence-transformer weights into the image for the same reason.
-ENV HF_HOME=/build/.cache/huggingface
+# Bake the sentence-transformer and cross-encoder weights into the image for the same
+# reason. The runtime stage is offline, so a reranker missing here would be served as no
+# reranking at all.
+ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
-SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+from drdoom.rag.rerank import CrossEncoderReranker; \
+SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
+CrossEncoderReranker()"
+
+# Embed the corpus once, here. On a CPU it takes minutes, and a container that did it on
+# every start would not answer for that long. The matrix is saved beside the corpus,
+# which the runtime stage already copies.
+RUN python -c "from drdoom.api.factory import build_retriever; build_retriever()"
+
+# Train the root cause classifier on generated incidents, with the same fixed seeds as
+# the published card. models/ is not part of the build context, so this is the only way
+# the service gets one; without it every incident reaches diagnosis unclassified.
+# train() rather than the command line, which would also rewrite the card.
+RUN python -c "\
+from drdoom.classify.train import ClassifierConfig, train; \
+train(ClassifierConfig(source='synthetic'))"
 
 
 FROM python:3.12-slim-bookworm AS runtime
@@ -46,9 +67,10 @@ RUN useradd --create-home --uid 10001 drdoom
 
 WORKDIR /app
 
-COPY --from=builder --chown=drdoom:drdoom /build/.venv /app/.venv
-COPY --from=builder --chown=drdoom:drdoom /build/data/raw/corpus /app/data/raw/corpus
-COPY --from=builder --chown=drdoom:drdoom /build/.cache/huggingface /home/drdoom/.cache/huggingface
+COPY --from=builder --chown=drdoom:drdoom /app/.venv /app/.venv
+COPY --from=builder --chown=drdoom:drdoom /app/data/raw/corpus /app/data/raw/corpus
+COPY --from=builder --chown=drdoom:drdoom /app/models /app/models
+COPY --from=builder --chown=drdoom:drdoom /app/.cache/huggingface /home/drdoom/.cache/huggingface
 COPY --chown=drdoom:drdoom src /app/src
 COPY --chown=drdoom:drdoom web /app/web
 COPY --chown=drdoom:drdoom evals /app/evals

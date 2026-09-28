@@ -4,8 +4,9 @@ The model is given retrieved passages and asked to reason within them. Retrieval
 driven by the symptoms and the predicted cause, not by a filter that pre-selects the
 document, so the passages are found rather than looked up.
 
-When the provider is unreachable the agent degrades instead of failing: the retrieved
-passages are returned with a diagnosis that says plainly no model was consulted. An
+When the provider is unreachable, or answers twice with something that fails the
+schema, the agent degrades instead of failing: the retrieved passages are returned with a
+diagnosis that says plainly no model summarised them, and why. An
 on-call engineer with the right three documents and no summary is better served than one
 with a stack trace, and the alternative -- inventing a summary -- is the failure mode this
 whole project is arranged against.
@@ -17,7 +18,17 @@ import logging
 from dataclasses import dataclass, field
 
 from drdoom.agents.schemas import Citation, Diagnosis
-from drdoom.llm.base import Completion, LLMProvider, LLMUnavailableError, Message
+from drdoom.llm.base import (
+    Completion,
+    Failure,
+    LLMInvalidOutputError,
+    LLMProvider,
+    LLMUnavailableError,
+    Message,
+    failure_clause,
+    failure_kind,
+    spent_on,
+)
 from drdoom.llm.structured import generate_structured
 from drdoom.rag.index import Hit, Retriever
 from drdoom.rag.rerank import NoReranker, Reranker
@@ -40,6 +51,7 @@ class DiagnosisResult:
     citations: list[Citation]
     degraded: bool = False
     completions: list[Completion] = field(default_factory=list)
+    failure: Failure | None = None
 
     @property
     def tokens(self) -> int:
@@ -114,22 +126,26 @@ class DiagnosisAgent:
                 system=SYSTEM,
                 max_tokens=800,
             )
-        except LLMUnavailableError as error:
-            logger.warning("provider unavailable, degrading to retrieval only: %s", error)
+        except (LLMUnavailableError, LLMInvalidOutputError) as error:
+            logger.warning("no usable diagnosis, degrading to retrieval only: %s", error)
             return DiagnosisResult(
-                diagnosis=self._degraded(hits, root_cause), citations=citations, degraded=True
+                diagnosis=self._degraded(hits, root_cause, failure_clause(error)),
+                citations=citations,
+                degraded=True,
+                completions=spent_on(error),
+                failure=failure_kind(error),
             )
 
         return DiagnosisResult(
             diagnosis=diagnosis, citations=citations, degraded=False, completions=completions
         )
 
-    def _degraded(self, hits: list[Hit], root_cause: str | None) -> Diagnosis:
+    def _degraded(self, hits: list[Hit], root_cause: str | None, reason: str) -> Diagnosis:
         """A truthful placeholder: what was retrieved, and that nothing summarised it."""
         leading = hits[0].chunk.citation if hits else "no matching documentation"
         return Diagnosis(
             summary=(
-                "No model was available, so this incident has not been summarised. "
+                f"{reason[0].upper()}{reason[1:]}, so this incident has not been summarised. "
                 f"The most relevant documentation retrieved was: {leading}. "
                 "Read the cited passages directly."
             ),

@@ -1,10 +1,12 @@
 name: ci
 
+# dr-strange is the integration branch: phase branches merge into it before it merges
+# into main, so it is checked on the same terms.
 on:
   push:
-    branches: [main]
+    branches: [main, dr-strange]
   pull_request:
-    branches: [main]
+    branches: [main, dr-strange]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,11 +68,11 @@ jobs:
         if: steps.corpus.outputs.cache-hit != 'true'
         run: uv run python -c "from drdoom.rag import corpus; corpus.download()"
 
-      - name: Restore the embedding model
+      - name: Restore the embedding and reranking models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: huggingface-${{ hashFiles('src/drdoom/rag/embed.py') }}
+          key: huggingface-${{ hashFiles('src/drdoom/rag/embed.py', 'src/drdoom/rag/rerank.py') }}
 
       - name: Score retrieval and diagnosis
         run: uv run python -m drdoom.evals.run

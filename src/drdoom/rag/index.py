@@ -118,11 +118,20 @@ class DenseIndex:
 
     name = "dense"
 
-    def __init__(self, chunks: list[Chunk], embedder: Embedder) -> None:
+    def __init__(
+        self, chunks: list[Chunk], embedder: Embedder, matrix: np.ndarray | None = None
+    ) -> None:
         self.chunks = chunks
         self.embedder = embedder
         self.name = f"dense[{embedder.name}]"
-        self.matrix = embedder.encode([chunk.search_text for chunk in chunks])
+        if matrix is None:
+            matrix = embedder.encode([chunk.search_text for chunk in chunks])
+        elif matrix.shape != (len(chunks), embedder.dimension):
+            raise ValueError(
+                f"embedding matrix has shape {matrix.shape}, "
+                f"expected {(len(chunks), embedder.dimension)}"
+            )
+        self.matrix = matrix
 
     def search(self, query: str, k: int = 10) -> list[Hit]:
         if not self.chunks:

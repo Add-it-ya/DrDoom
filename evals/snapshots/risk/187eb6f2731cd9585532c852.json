@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 391,
+  "output_tokens": 493,
+  "text": "{\"risk_level\":\"high\",\"worst_case\":\"Scaling out adds more CPU load, overwhelming the cluster and causing the static asset service to become unavailable, resulting in an outage.\",\"reasons\":[\"adds load to already saturated nodes\",\"new pods may be unschedulable, causing pending deployments\",\"increased contention can throttle all instances and drop traffic\"]}"
+}

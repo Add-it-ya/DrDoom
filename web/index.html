@@ -95,6 +95,18 @@
   .report h1 { font-size: 20px; } .report h2 { font-size: 15px; margin-top: 20px; }
   .report code { font-family: var(--mono); font-size: .9em; }
 
+  .recent { margin-bottom: 22px; }
+  .recent-head { display: flex; align-items: center; gap: 12px; }
+  .recent h2 { margin: 0; font-size: 16px; }
+  .incidents { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+  .incidents button {
+    width: 100%; text-align: left; display: grid; gap: 12px; align-items: baseline;
+    grid-template-columns: 170px 150px minmax(0, 1fr);
+  }
+  .incidents .when { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .incidents .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 600px) { .incidents button { grid-template-columns: 1fr; gap: 4px; } }
+
   .log { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 24px; }
   .log div { padding: 1px 0; }
   .err { color: var(--crit); }
@@ -114,6 +126,14 @@
     <label for="key">Approval key</label>
     <input id="key" type="password" placeholder="X-API-Key" autocomplete="off">
   </div>
+
+  <section class="recent">
+    <div class="recent-head">
+      <h2>Recent incidents</h2>
+      <button id="loadRecent">Load</button>
+    </div>
+    <ol class="incidents" id="incidents"></ol>
+  </section>
 
   <div class="stages">
     <div class="stage" id="s-triage"><span class="name">Triage</span><div class="body" id="b-triage"></div></div>
@@ -234,11 +254,23 @@ function showDiagnosis(data) {
   fill("diagnose", wrapper);
 }
 
+/** How the final risk was reached: three ratings, the most cautious stands. */
+function describeRisk(risk) {
+  if (!risk) return null;
+  const assessor = risk.assessor || (risk.assessor_status === "not_needed"
+    ? "not needed (already high)"
+    : "no answer (" + risk.assessor_status + "), counted as high");
+  return "author " + risk.author + ", policy floor " + risk.floor + ", independent " + assessor;
+}
+
 function showPlan(data) {
   const p = data.plan || {};
   fill("remediate", details([
     ["Immediate action", p.immediate_action],
+    ["Catalogue action", p.action || "none (approving runs nothing)"],
     ["Risk", p.risk_level, p.risk_level],
+    ["Rated by", describeRisk(data.risk)],
+    ["Worst case", data.risk && data.risk.worst_case],
     ["Needs approval", p.requires_approval ? "yes" : "no"],
     ["Short-term fix", p.short_term_fix],
     ["Long-term fix", p.long_term_fix],
@@ -261,7 +293,10 @@ function showGate(pending) {
   const body = $("gateBody");
   body.replaceChildren(details([
     ["Action", pending.immediate_action],
+    ["Will run", pending.would_run || "nothing (the plan names no catalogue action)"],
     ["Risk", pending.risk_level, pending.risk_level],
+    ["Rated by", describeRisk(pending.risk)],
+    ["Worst case", pending.risk && pending.risk.worst_case],
     ["Rollback", pending.rollback],
   ]));
   const hash = document.createElement("div");
@@ -333,11 +368,12 @@ function handleEvent(block) {
   if (name === "accepted") { incidentId = data.incident_id; }
   else if (name === "triage") { showTriage(data); }
   else if (name === "diagnose") { showDiagnosis(data); }
-  else if (name === "remediate") { showPlan(data); }
+  else if (name === "remediate" || name === "assess_risk") { showPlan(data); }
   else if (name === "awaiting_approval") { showGate(data); }
   else if (name === "execute" || name === "escalate") { showOutcome(data); }
   else if (name === "report") { showReport(data.report); }
-  else if (name === "done") { log("finished: " + data.status); }
+  else if (name === "failed") { log("stopped: " + data.detail, true); }
+  else if (name === "done") { log("finished: " + data.status, data.status === "failed"); }
 }
 
 async function decide(approved) {
@@ -366,6 +402,75 @@ async function decide(approved) {
   }
 }
 
+// Where each status sits on the page's one colour scale.
+const STATUS_PILL = {
+  awaiting_approval: "medium", failed: "high", rejected: "high", complete: "low",
+};
+
+/** The most recent investigations. Listing needs a key; every value is textContent. */
+async function loadRecent() {
+  const key = $("key").value.trim();
+  if (!key) { log("a key is required to list incidents", true); return; }
+
+  try {
+    const response = await fetch("/incidents?limit=20", { headers: { "X-API-Key": key } });
+    if (response.status === 401) throw new Error("that key was not accepted");
+    if (!response.ok) throw new Error("listing failed: " + response.status);
+
+    const page = await response.json();
+    const list = $("incidents");
+    list.replaceChildren();
+    for (const item of page.incidents) {
+      const when = document.createElement("span");
+      when.className = "when";
+      when.textContent = item.updated_at
+        ? new Date(item.updated_at).toLocaleString()
+        : item.incident_id;
+      const state = document.createElement("span");
+      state.className = "pill " + (STATUS_PILL[item.status] || "");
+      state.textContent = String(item.status).replace(/_/g, " ");
+      const what = document.createElement("span");
+      what.className = "what";
+      what.textContent = item.likely_cause || item.action
+        || (item.is_anomaly ? "incident" : "nothing detected");
+
+      const open = document.createElement("button");
+      open.append(when, state, what);
+      open.addEventListener("click", () => openIncident(item.incident_id));
+      const entry = document.createElement("li");
+      entry.appendChild(open);
+      list.appendChild(entry);
+    }
+    log("listed " + page.incidents.length + " of " + page.total + " incidents");
+  } catch (error) {
+    log(String(error), true);
+  }
+}
+
+/** Show a stored investigation the way the live run showed it, gate included. */
+async function openIncident(id) {
+  reset();
+  try {
+    const response = await fetch("/incidents/" + encodeURIComponent(id), {
+      headers: { "X-API-Key": $("key").value.trim() },
+    });
+    if (!response.ok) throw new Error("could not open " + id + ": " + response.status);
+
+    const data = await response.json();
+    incidentId = data.incident_id;
+    log("opened incident " + data.incident_id + ": " + data.status);
+    if (data.triage) showTriage(data);
+    if (data.diagnosis) showDiagnosis(data);
+    if (data.plan) showPlan(data);
+    if (data.awaiting) showGate(data.awaiting);
+    if (data.decision || data.escalation) showOutcome(data);
+    showReport(data.report);
+  } catch (error) {
+    log(String(error), true);
+  }
+}
+
+$("loadRecent").addEventListener("click", loadRecent);
 $("run").addEventListener("click", () => investigate(true));
 $("runCalm").addEventListener("click", () => investigate(false));
 $("approve").addEventListener("click", () => decide(true));

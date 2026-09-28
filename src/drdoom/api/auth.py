@@ -95,12 +95,12 @@ PresentedKey = Annotated[str | None, Security(api_key_header)]
 
 
 def require_principal(presented: PresentedKey) -> Principal:
-    """Authenticate an approval request, or refuse it."""
+    """Authenticate a request for a protected endpoint, or refuse it."""
     principal = _keyring.resolve(presented)
     if principal is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"a valid {HEADER_NAME} is required to approve a remediation",
+            detail=f"a valid {HEADER_NAME} is required",
             headers={"WWW-Authenticate": HEADER_NAME},
         )
     return principal

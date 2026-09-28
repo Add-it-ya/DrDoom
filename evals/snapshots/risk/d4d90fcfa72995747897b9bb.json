@@ -1,0 +1,8 @@
+{
+  "note": "risk eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 391,
+  "output_tokens": 295,
+  "text": "{\n  \"risk_level\": \"medium\",\n  \"worst_case\": \"The rollback fails to start the previous version, causing a temporary outage of the notifications service and missed notifications.\",\n  \"reasons\": [\n    \"Rollback may trigger pod restarts leading to brief service interruption\",\n    \"If the previous image is incompatible with current environment, pods could stay in CrashLoopBackOff\",\n    \"No data migration is involved, but missing notifications affect user experience\"\n  ]\n}"
+}
