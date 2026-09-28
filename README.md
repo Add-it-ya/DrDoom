@@ -134,6 +134,12 @@ no filter narrowing the search to a document the classifier already picked. Scor
 hand-authored operational questions in [`evals/`](evals/retrieval_queries.json). Full
 ablation in [docs/retrieval-results.md](docs/retrieval-results.md).
 
+Both sources are pinned to one upstream commit each, the heads of their `main` branches
+when these results were measured, and every download is checked against a digest of the
+text (`src/drdoom/rag/corpus.py`). They used to follow `main`: by the time the container
+was first built, upstream had added a page and rewritten another, and the evaluation in CI
+had quietly stopped reproducing the scores published here.
+
 | Configuration | Hit@5 | Recall@5 | MRR |
 |---|---:|---:|---:|
 | BM25 only | 0.725 | 0.675 | 0.539 |
