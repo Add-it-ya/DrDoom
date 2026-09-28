@@ -72,8 +72,14 @@ asserts every `innerHTML` assignment in the page has `DOMPurify.sanitize` on its
 side (`tests/test_api.py`), and the behaviour was checked in a real browser against
 `<script>`, `<img onerror>` and a `javascript:` link — all three stripped, nothing executed.
 
-**Residual risk.** DOMPurify is a dependency loaded from a CDN with no Subresource
-Integrity hash. A compromised CDN would defeat this. Adding SRI is listed below.
+DOMPurify and marked load from a CDN pinned by Subresource Integrity: the page names the
+sha512 of each file, and a browser refuses a script whose bytes differ. Without the
+sanitiser the postmortem is not rendered at all, so a tampered CDN makes the page fail
+closed rather than open (`web/index.html`; a test requires a hash on every external
+script).
+
+**Residual risk.** The sanitiser is the only thing between model text and markup; there
+is no Content Security Policy behind it yet. That is listed below.
 
 ### 3. Approving an action nobody approved
 
@@ -171,12 +177,11 @@ from anywhere else.
 ## Known gaps, in the order they should be closed
 
 1. **Rate limiting on `/investigate`.** Currently unauthenticated and unthrottled.
-2. **Subresource Integrity on the CDN scripts.** DOMPurify and marked load without a hash.
-3. **Short-lived credentials.** Static API keys have no expiry or revocation path.
-4. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
+2. **Short-lived credentials.** Static API keys have no expiry or revocation path.
+3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
    rewrite history undetected.
-5. **A Content Security Policy.** Defence in depth behind the sanitiser.
-6. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
+4. **A Content Security Policy.** Defence in depth behind the sanitiser.
+5. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 
 ---

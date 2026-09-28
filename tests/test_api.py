@@ -486,6 +486,20 @@ def test_the_dashboard_loads_a_sanitiser() -> None:
     assert source.index("purify.min.js") < source.index("DOMPurify.sanitize")
 
 
+def test_every_script_from_elsewhere_is_pinned_by_hash() -> None:
+    """A compromised CDN would otherwise replace the sanitiser the page relies on."""
+    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    external = re.findall(r"<script\s[^>]*src=\"https?://[^>]*>", source)
+
+    assert len(external) == 2
+    for tag in external:
+        assert re.search(r'integrity="sha(384|512)-[A-Za-z0-9+/]+=*"', tag), tag
+        assert 'crossorigin="anonymous"' in tag, tag
+
+
 def test_the_dashboard_uses_text_content_for_plain_fields() -> None:
     source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
         encoding="utf-8"
