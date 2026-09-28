@@ -111,3 +111,42 @@ def test_a_missing_classifier_is_a_warning(monkeypatch, tmp_path, caplog) -> Non
 
     [record] = [r for r in caplog.records if "unclassified" in r.getMessage()]
     assert record.levelname == "WARNING"
+
+
+def test_start_up_names_the_whole_configuration_in_one_line(monkeypatch, tmp_path, caplog) -> None:
+    """Which detector, threshold, retriever, reranker, classifier and models are serving."""
+    from drdoom.api import factory
+    from drdoom.audit import AuditLog
+    from drdoom.detect.baselines import WindowSpread
+    from drdoom.llm.stub import StubProvider
+    from drdoom.rag.corpus import Document
+    from drdoom.rag.index import BM25Index
+    from drdoom.rag.ingest import chunk_all
+
+    document = Document(
+        doc_id="k8s:memory",
+        source="kubernetes",
+        path="memory.md",
+        title="Assign Memory Resources",
+        text="## Limits\n" + "Set a memory limit on the container. " * 10,
+        url="https://example.invalid/memory",
+        licence="CC-BY-4.0",
+    )
+    names = list(synthetic.FEATURE_NAMES)
+    monkeypatch.setattr(factory, "build_detector", lambda: (WindowSpread(), 0.1234, names))
+    monkeypatch.setattr(
+        factory, "build_retriever", lambda use_dense=True: BM25Index(chunk_all([document]))
+    )
+    monkeypatch.setattr(factory, "build_classifier", lambda: None)
+    monkeypatch.setattr(factory, "checkpoint_path", lambda: tmp_path / "state.sqlite")
+    monkeypatch.setattr(factory, "AuditLog", lambda: AuditLog(tmp_path / "audit.jsonl"))
+
+    with caplog.at_level("INFO", logger="drdoom.api.factory"):
+        service = factory.build_service(provider=StubProvider(model="stub-1"))
+    service.connection.close()
+
+    [line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("service ready")]
+    assert line == (
+        "service ready: detector window_spread at threshold 0.1234, retriever BM25Index, "
+        "reranker none, classifier none, model stub/stub-1, risk reviewed by stub/stub-1"
+    )

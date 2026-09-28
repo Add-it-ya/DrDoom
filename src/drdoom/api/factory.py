@@ -178,13 +178,29 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
         audit=audit,
         risk=RiskAssessor(reviewer),
     )
-    logger.info(
-        "service ready with provider %s, risk reviewed by %s/%s",
-        model.name,
-        reviewer.name,
-        reviewer.model,
-    )
+    logger.info("service ready: %s", describe(investigator))
     return Service(investigator=investigator, audit=audit, connection=connection)
+
+
+def describe(investigator: Investigator) -> str:
+    """Every choice the running service made, in one line.
+
+    Each of these can be set by the environment or fall back at start-up, so the first
+    question about a surprising result is which configuration produced it. One line that
+    answers it is worth more than the same facts spread over a screen of start-up log.
+    """
+    triage = investigator.triage
+    diagnosis = investigator.diagnosis
+    model = diagnosis.provider
+    reviewer = investigator.risk.provider
+    return (
+        f"detector {triage.detector.name} at threshold {triage.threshold:.4f}, "
+        f"retriever {type(diagnosis.retriever).__name__}, "
+        f"reranker {diagnosis.reranker.name}, "
+        f"classifier {'loaded' if triage.classifier is not None else 'none'}, "
+        f"model {model.name}/{model.model}, "
+        f"risk reviewed by {reviewer.name}/{reviewer.model}"
+    )
 
 
 def demo_window(anomalous: bool = True) -> np.ndarray:
@@ -199,4 +215,11 @@ def demo_window(anomalous: bool = True) -> np.ndarray:
     return scenario.values[start : start + WINDOW]
 
 
-__all__ = ["build_detector", "build_retriever", "build_service", "demo_window", "window_to_series"]
+__all__ = [
+    "build_detector",
+    "build_retriever",
+    "build_service",
+    "demo_window",
+    "describe",
+    "window_to_series",
+]
