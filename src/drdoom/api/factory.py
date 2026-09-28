@@ -96,9 +96,15 @@ def build_detector(kind: str | None = None) -> tuple[Detector, float, list[str]]
 
 
 def build_classifier() -> Classifier | None:
+    """The trained root cause classifier, or None if there is none to load.
+
+    Its absence is a warning, not a note: the service still runs, but every incident
+    reaches diagnosis without a suspected cause, which is a quieter and worse system than
+    the one the results describe.
+    """
     directory = get_settings().models_dir / "classifier" / "synthetic"
     if not (directory / "model.json").is_file():
-        logger.info("no trained classifier at %s, incidents will be unclassified", directory)
+        logger.warning("no trained classifier at %s, incidents will be unclassified", directory)
         return None
     try:
         return Classifier.load(directory)

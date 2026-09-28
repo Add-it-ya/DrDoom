@@ -65,3 +65,49 @@ def test_a_detector_that_fails_to_fit_falls_back_to_the_baseline(monkeypatch) ->
     )
 
     assert factory.build_detector("conv")[0].name == "window_spread"
+
+
+def _models_at(monkeypatch, root) -> None:
+    from types import SimpleNamespace
+
+    from drdoom.api import factory
+
+    monkeypatch.setattr(factory, "get_settings", lambda: SimpleNamespace(models_dir=root))
+
+
+def test_a_trained_classifier_is_loaded(monkeypatch, tmp_path) -> None:
+    from drdoom.api.factory import build_classifier
+    from drdoom.classify.train import ClassifierConfig, train
+
+    train(
+        ClassifierConfig(
+            source="synthetic",
+            n_scenarios=24,
+            days=2,
+            n_trials=2,
+            n_folds=3,
+            stride=40,
+            models_root=tmp_path,
+        )
+    )
+    _models_at(monkeypatch, tmp_path)
+
+    classifier = build_classifier()
+
+    assert classifier is not None
+    cause, confidence = classifier.predict(demo_window(), list(synthetic.FEATURE_NAMES))
+    assert cause in classifier.labels
+    assert 0.0 <= confidence <= 1.0
+
+
+def test_a_missing_classifier_is_a_warning(monkeypatch, tmp_path, caplog) -> None:
+    """Every incident goes unclassified without it, which should not pass as routine."""
+    from drdoom.api.factory import build_classifier
+
+    _models_at(monkeypatch, tmp_path)
+
+    with caplog.at_level("INFO", logger="drdoom.api.factory"):
+        assert build_classifier() is None
+
+    [record] = [r for r in caplog.records if "unclassified" in r.getMessage()]
+    assert record.levelname == "WARNING"
