@@ -14,7 +14,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-WORKDIR /build
+# The same directory the runtime stage uses. A virtualenv records its own path in every
+# console script's shebang and in the editable install, so one built elsewhere and copied
+# to /app cannot start: uvicorn would point at an interpreter that does not exist.
+WORKDIR /app
 
 # Dependencies first, as their own layer: application code changes far more often than
 # the lockfile, and this way editing a module does not reinstall torch.
@@ -28,12 +31,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Bake the corpus. The archive it comes from is large; what survives is a few megabytes
 # of extracted documentation, so this happens here rather than in the runtime image.
-ENV PATH="/build/.venv/bin:$PATH" \
-    PYTHONPATH=/build/src
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app/src
 RUN python -c "from drdoom.rag import corpus; corpus.download()"
 
 # Bake the sentence-transformer weights into the image for the same reason.
-ENV HF_HOME=/build/.cache/huggingface
+ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
 SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
@@ -52,9 +55,9 @@ RUN useradd --create-home --uid 10001 drdoom
 
 WORKDIR /app
 
-COPY --from=builder --chown=drdoom:drdoom /build/.venv /app/.venv
-COPY --from=builder --chown=drdoom:drdoom /build/data/raw/corpus /app/data/raw/corpus
-COPY --from=builder --chown=drdoom:drdoom /build/.cache/huggingface /home/drdoom/.cache/huggingface
+COPY --from=builder --chown=drdoom:drdoom /app/.venv /app/.venv
+COPY --from=builder --chown=drdoom:drdoom /app/data/raw/corpus /app/data/raw/corpus
+COPY --from=builder --chown=drdoom:drdoom /app/.cache/huggingface /home/drdoom/.cache/huggingface
 COPY --chown=drdoom:drdoom src /app/src
 COPY --chown=drdoom:drdoom web /app/web
 COPY --chown=drdoom:drdoom evals /app/evals
