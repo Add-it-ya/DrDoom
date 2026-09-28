@@ -82,9 +82,12 @@ predecessor project to this one had no authentication on its approval endpoint a
 
 **What is done.** `/incidents/{id}/approve` requires a valid `X-API-Key`, compared in
 constant time, resolving to a **named principal** recorded in the audit log
-(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. The incident list,
-`GET /incidents`, requires a key too, because it is a map of every incident and what was
-done about it. Reading a single incident, its audit trail and `/metrics` is still open.
+(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. Reading requires a key too:
+the incident list (a map of every incident and what was done about it), a single incident
+(its diagnosis and the command approval would run, behind an identifier of twelve hex
+characters), its audit trail and `/metrics`. Open are only `/health`, the demo window and
+starting an investigation, whose caller already holds the window it sent
+(`src/drdoom/api/main.py`).
 
 **Residual risk.** Static API keys have no expiry and no revocation beyond editing the
 configuration. For anything beyond a demonstration, short-lived tokens tied to an identity

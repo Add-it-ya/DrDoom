@@ -123,7 +123,7 @@
   <div class="controls">
     <button id="run" class="primary">Investigate a disturbed window</button>
     <button id="runCalm">Investigate a calm window</button>
-    <label for="key">Approval key</label>
+    <label for="key">API key</label>
     <input id="key" type="password" placeholder="X-API-Key" autocomplete="off">
   </div>
 
@@ -454,6 +454,7 @@ async function openIncident(id) {
     const response = await fetch("/incidents/" + encodeURIComponent(id), {
       headers: { "X-API-Key": $("key").value.trim() },
     });
+    if (response.status === 401) throw new Error("that key was not accepted");
     if (!response.ok) throw new Error("could not open " + id + ": " + response.status);
 
     const data = await response.json();

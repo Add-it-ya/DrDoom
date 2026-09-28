@@ -30,6 +30,7 @@ from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, RISK_LOW, disturb
 
 KEY = "test-key-value"
 PRINCIPAL = "aditya"
+AUTH = {"X-API-Key": KEY}
 
 # The payload a poisoned document could talk a model into producing.
 HOSTILE = (
@@ -151,13 +152,13 @@ def test_an_incident_stops_at_the_gate(client) -> None:
 def test_an_incident_can_be_read_back(client) -> None:
     incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
 
-    body = client.get(f"/incidents/{incident}").json()
+    body = client.get(f"/incidents/{incident}", headers=AUTH).json()
 
     assert body["status"] == "awaiting_approval"
 
 
 def test_an_unknown_incident_is_not_found(client) -> None:
-    assert client.get("/incidents/does-not-exist").status_code == 404
+    assert client.get("/incidents/does-not-exist", headers=AUTH).status_code == 404
 
 
 @pytest.mark.parametrize("values", [[], [[1.0, 2.0]], [[1.0, 2.0], [3.0]], [[], []]])
@@ -298,8 +299,10 @@ def test_an_unauthorised_attempt_executes_nothing(client) -> None:
 
     client.post(f"/incidents/{incident}/approve", json={"approved": True})
 
-    assert client.get(f"/incidents/{incident}").json()["status"] == "awaiting_approval"
-    assert client.get(f"/incidents/{incident}/audit").json()["entries"] == []
+    assert (
+        client.get(f"/incidents/{incident}", headers=AUTH).json()["status"] == "awaiting_approval"
+    )
+    assert client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"] == []
 
 
 def test_a_valid_key_approves_and_is_recorded_by_name(client) -> None:
@@ -313,7 +316,7 @@ def test_a_valid_key_approves_and_is_recorded_by_name(client) -> None:
 
     assert body["status"] == "complete"
     assert body["execution"]["executed"] is True
-    entries = client.get(f"/incidents/{incident}/audit").json()["entries"]
+    entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
     assert entries[0]["principal"] == PRINCIPAL
 
 
@@ -330,6 +333,23 @@ def test_an_empty_key_ring_accepts_nobody(tmp_path) -> None:
     set_service(None)
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("path", ["/incidents/{id}", "/incidents/{id}/audit", "/metrics"])
+def test_reading_what_the_service_knows_requires_a_key(client, path: str) -> None:
+    """An incident shows the command approval would run, and its id is no secret."""
+    incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
+    url = path.format(id=incident)
+
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers={"X-API-Key": "not-the-key"}).status_code == 401
+    assert client.get(url, headers=AUTH).status_code == 200
+
+
+def test_starting_an_investigation_stays_open(client) -> None:
+    """The demo has to be clickable; the caller already holds the window it sent."""
+    assert client.get("/demo/window").status_code == 200
+    assert client.post("/investigate", json=window_payload()).status_code == 200
 
 
 # --- idempotency -------------------------------------------------------------------
@@ -354,7 +374,7 @@ def test_a_repeat_does_not_execute_a_second_time(client) -> None:
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
 
-    assert len(client.get(f"/incidents/{incident}/audit").json()["entries"]) == 1
+    assert len(client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]) == 1
 
 
 def test_a_reversal_after_the_fact_returns_the_recorded_decision(client) -> None:
@@ -476,8 +496,6 @@ def test_the_dashboard_uses_text_content_for_plain_fields() -> None:
 
 # --- listing -----------------------------------------------------------------------
 
-AUTH = {"X-API-Key": KEY}
-
 
 def start(client, anomalous: bool = True) -> str:
     return client.post("/investigate", json=window_payload(anomalous)).json()["incident_id"]
@@ -523,7 +541,10 @@ def test_a_listed_incident_says_where_it_stands(client) -> None:
     assert item["incident_id"] == incident
     assert item["status"] == "awaiting_approval"
     assert item["is_anomaly"] is True
-    assert item["risk_level"] == client.get(f"/incidents/{incident}").json()["risk"]["final"]
+    assert (
+        item["risk_level"]
+        == client.get(f"/incidents/{incident}", headers=AUTH).json()["risk"]["final"]
+    )
     assert item["updated_at"]
 
 
@@ -551,13 +572,23 @@ def test_the_dashboard_sends_the_key_when_listing() -> None:
     assert '"X-API-Key"' in listing[: listing.index(");")]
 
 
+def test_the_dashboard_sends_the_key_when_opening_an_incident() -> None:
+    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    opening = source[source.index('fetch("/incidents/" + encodeURIComponent(id)') :]
+
+    assert '"X-API-Key"' in opening[: opening.index(");")]
+
+
 # --- metrics -----------------------------------------------------------------------
 
 
 def test_metrics_report_traffic_and_audit_health(client) -> None:
     client.post("/investigate", json=window_payload(anomalous=False))
 
-    body = client.get("/metrics").json()
+    body = client.get("/metrics", headers=AUTH).json()
 
     assert body["requests"]["investigate"] == 1
     assert body["audit_chain_intact"] is True
@@ -570,7 +601,7 @@ def test_metrics_count_approvals(client) -> None:
         f"/incidents/{incident}/approve", json={"approved": True}, headers={"X-API-Key": KEY}
     )
 
-    assert client.get("/metrics").json()["requests"]["approve"] == 1
+    assert client.get("/metrics", headers=AUTH).json()["requests"]["approve"] == 1
 
 
 def test_the_demo_window_matches_the_expected_shape(client) -> None:
@@ -584,7 +615,7 @@ def test_metrics_report_where_time_went(client) -> None:
     """The first question about a slow investigation is which stage was slow."""
     client.post("/investigate", json=window_payload())
 
-    stages = client.get("/metrics").json()["stages"]
+    stages = client.get("/metrics", headers=AUTH).json()["stages"]
 
     assert "triage" in stages
     assert "diagnose" in stages
@@ -595,7 +626,7 @@ def test_metrics_report_where_time_went(client) -> None:
 def test_a_calm_run_times_only_the_stage_that_ran(client) -> None:
     client.post("/investigate", json=window_payload(anomalous=False))
 
-    stages = client.get("/metrics").json()["stages"]
+    stages = client.get("/metrics", headers=AUTH).json()["stages"]
 
     assert "triage" in stages
     assert "diagnose" not in stages
@@ -627,7 +658,7 @@ def test_a_run_that_stops_answers_500_with_where_to_look(broken) -> None:
     assert detail["status"] == "failed"
     assert "/secret/path" not in response.text
 
-    incident = broken.get(f"/incidents/{detail['incident_id']}").json()
+    incident = broken.get(f"/incidents/{detail['incident_id']}", headers=AUTH).json()
     assert incident["status"] == "failed"
     assert incident["is_anomaly"] is True
 

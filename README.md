@@ -248,7 +248,9 @@ delivers the same run a stage at a time over server-sent events, so the dashboar
 progressively instead of blocking on one long request.
 `POST /incidents/{id}/approve` resumes a suspended one. `GET /incidents` lists stored
 investigations newest first (`limit`, `offset`), and the dashboard reopens any of them,
-approval gate included.
+approval gate included. Approving and every read of stored state (`/incidents`,
+`/incidents/{id}`, its `/audit`, and `/metrics`) take an `X-API-Key`; health, the demo
+window and starting an investigation do not.
 
 The service retrieves with BM25 and the MiniLM encoder fused, then reorders the shortlist
 with the cross-encoder: the configuration the evaluation suite scores. The first start
