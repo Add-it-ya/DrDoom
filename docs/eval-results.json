@@ -1,222 +1,218 @@
 {
   "summary": {
     "cases": 15,
-    "retrieval_hit_at_5": 0.85,
-    "retrieval_mrr": 0.6164583333333333,
+    "retrieval_hit_at_5": 0.875,
+    "retrieval_mrr": 0.6988095238095238,
     "retrieval_queries": 40,
-    "diagnosis_retrieval_hit": 0.6,
-    "groundedness": 0.5935166826541363,
-    "supported_fraction": 0.49433862433862436,
-    "expected_terms_present": 0.6,
+    "retrieval_configuration": "hybrid (bm25 + MiniLM), reranked by ms-marco-MiniLM-L-6-v2, from a shortlist of 30",
+    "diagnosis_retrieval_hit": 0.6666666666666666,
+    "groundedness": 0.59544222514388,
+    "supported_fraction": 0.5277777777777778,
+    "expected_terms_present": 0.8,
     "parse_success": 1.0,
     "degraded": 0,
-    "total_tokens": 25703
+    "total_tokens": 28699
   },
   "cases": [
     {
       "case": "memory-oom",
       "retrieved_expected": true,
-      "groundedness": 0.6614,
-      "supported_fraction": 0.5,
+      "groundedness": 0.4631,
+      "supported_fraction": 0.2857,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1825,
+      "tokens": 1777,
       "unsupported": [
-        "Container memory usage increased over ~40 minutes and the process was terminated with exit code 137 (OOMKilled).",
-        "Out\u2011of\u2011memory condition caused by the container exceeding its memory limit (possible memory leak)."
+        "The container's memory usage increased continuously for ~40 minutes until the kernel OOM killer terminated the process, resulting in the pod entering an OOMKilled state and being repeatedly restarted.",
+        "Out\u2011of\u2011memory condition caused by the container exceeding its memory limit (potential memory leak or workload that allocates more memory than the configured limit)."
       ]
     },
     {
       "case": "memory-namespace-cap",
       "retrieved_expected": true,
-      "groundedness": 0.5547,
-      "supported_fraction": 0.5,
+      "groundedness": 0.6083,
+      "supported_fraction": 0.75,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1524,
+      "tokens": 1339,
       "unsupported": [
-        "The provided documentation does not describe symptoms of a memory leak, but it does describe mechanisms to restrict memory usage per namespace (minimum/maximum memory constraints, default memory requests/limits, and memory quotas).",
-        "Unconstrained memory usage in the namespace (e.g., pods without memory limits) leading to excessive consumption, which may appear as a memory leak."
+        "The namespace likely lacks memory limits or default limits, allowing containers to use unlimited memory (see documentation on missing limits and the role of LimitRange and ResourceQuota)."
       ]
     },
     {
       "case": "deploy-regression",
       "retrieved_expected": false,
-      "groundedness": 0.6207,
-      "supported_fraction": 0.625,
-      "has_expected_terms": false,
+      "groundedness": 0.6454,
+      "supported_fraction": 0.5714,
+      "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1598,
+      "tokens": 1725,
       "unsupported": [
-        "Error rate spiked after the recent release and remains high.",
-        "Review recent changes for readiness probes, image references, quota or permission changes."
+        "Error rate spiked immediately after a release and remains high.",
+        "The classifier identified a deploy_regression, suggesting the recent Deployment rollout may have failed or stalled."
       ]
     },
     {
       "case": "deploy-stuck",
       "retrieved_expected": false,
-      "groundedness": 0.6938,
-      "supported_fraction": 0.7143,
+      "groundedness": 0.7677,
+      "supported_fraction": 0.6667,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1445,
+      "tokens": 3895,
       "unsupported": [
-        "Stalled rollout due to exceeding .spec.progressDeadlineSeconds (default 10\u202fmin); common underlying reasons include readiness probe failures, image pull errors, quota or permission issues as listed in the documentation.",
-        "Resolve the root issue identified (fix probe, correct image, adjust quota/permissions)."
+        "Run `kubectl rollout status deployment/<name>` to confirm the error and see the exit code; describe the Deployment with `kubectl describe deployment <name>` and inspect the Progressing condition and Events for details (e.g., readiness probe failures, image pull errors, quota issues); if the issue is identified, fix the underlying problem (adjust probes, image, permissions, etc.) and resume the rollout; optionally rollback to the previous version using `kubectl rollout undo deployment/<name>` for quick recovery; after fixing, re\u2011trigger or resume the rollout then verify success with `kubectl rollout status` and `kubectl get deployment <name>`."
       ]
     },
     {
       "case": "deploy-surge",
       "retrieved_expected": true,
-      "groundedness": 0.5686,
-      "supported_fraction": 0.25,
-      "has_expected_terms": false,
+      "groundedness": 0.5508,
+      "supported_fraction": 0.3333,
+      "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1639,
+      "tokens": 1323,
       "unsupported": [
-        "During each deployment, a subset of requests fail while old pods are terminating.",
-        "This can reduce available capacity for new pods and cause request failures, especially if the deployment\u2019s max surge/unavailable settings are insufficient to mask the gap."
+        "During each deployment a subset of requests fail while the old pods are terminating, indicating that the service capacity drops while the previous revision is being removed.",
+        "The documentation also notes that terminating Pods may remain for a period, causing the total pod count to exceed `.spec.replicas` and further impacting capacity."
       ]
     },
     {
       "case": "traffic-spike-scale",
       "retrieved_expected": false,
-      "groundedness": 0.5179,
-      "supported_fraction": 0.4,
+      "groundedness": 0.5459,
+      "supported_fraction": 0.5,
       "has_expected_terms": false,
       "parsed": true,
       "degraded": false,
-      "tokens": 1904,
+      "tokens": 2189,
       "unsupported": [
-        "Queue depth and CPU are rising together as request volume doubles.",
-        "Verify the concurrency limits for the affected priority levels."
+        "Queue depth and CPU usage are rising together as request volume doubles, which aligns with the documented behavior of the API Priority and Fairness queuing system when traffic increases faster than the configured limits.",
+        "traffic_spike causing the current PriorityLevelConfiguration (queues, queueLengthLimit, handSize) to become saturated, leading to higher queued request counts and increased CPU load as described in the API Priority and Fairness documentation."
       ]
     },
     {
       "case": "traffic-spike-nodes",
       "retrieved_expected": true,
-      "groundedness": 0.6952,
-      "supported_fraction": 0.6667,
-      "has_expected_terms": true,
+      "groundedness": 0.6675,
+      "supported_fraction": 1.0,
+      "has_expected_terms": false,
       "parsed": true,
       "degraded": false,
-      "tokens": 1534,
-      "unsupported": [
-        "A traffic spike has increased overall cluster resource demand, exhausting available CPU/memory and causing insufficient capacity for new pods."
-      ]
+      "tokens": 1452,
+      "unsupported": []
     },
     {
       "case": "unhealthy-pods",
       "retrieved_expected": false,
-      "groundedness": 0.6103,
-      "supported_fraction": 0.6667,
+      "groundedness": 0.6106,
+      "supported_fraction": 0.5,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 2170,
+      "tokens": 1782,
       "unsupported": [
-        "Check that the kubelet marks the pod as terminating and updates the EndpointSlice; verify the pod's ready condition is set to false and that any load balancer respects the terminating state; review terminationGracePeriodSeconds and readiness probes; ensure the termination flow described in the documentation is correctly implemented."
+        "The EndpointSlice still shows the pod as ready, causing load balancers to route traffic to a non\u2011responsive instance.",
+        "Ensure readiness probes are correctly configured and that any custom traffic\u2011draining logic uses the `serving` condition."
       ]
     },
     {
       "case": "dns-failures",
       "retrieved_expected": true,
-      "groundedness": 0.6202,
-      "supported_fraction": 0.6667,
+      "groundedness": 0.7586,
+      "supported_fraction": 1.0,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1897,
-      "unsupported": [
-        "Intermittent DNS resolution failures between services; nslookup commands show inability to resolve 'kubernetes.default', indicating a CoreDNS or DNS configuration issue."
-      ]
+      "tokens": 2351,
+      "unsupported": []
     },
     {
       "case": "service-unreachable",
       "retrieved_expected": true,
-      "groundedness": 0.5526,
-      "supported_fraction": 0.4286,
-      "has_expected_terms": false,
+      "groundedness": 0.6064,
+      "supported_fraction": 0.5,
+      "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1736,
+      "tokens": 2260,
       "unsupported": [
-        "The Service proxy layer (kube\u2011proxy) is likely mis\u2011configured or not functioning correctly, possibly due to an incorrect hairpin\u2011mode setting that prevents Pods from reaching the Service IP.",
-        "Verify kube\u2011proxy is running on the nodes and inspect its logs for errors."
+        "The provided documentation does not contain information that directly explains why requests to a Service return errors while the Pods appear healthy.",
+        "Not enough information from the excerpts to determine the cause; possible issues could involve Service routing, DNS resolution, or hairpin\u2011mode networking, but these are not explicitly linked to the observed symptom in the docs."
       ]
     },
     {
       "case": "pods-not-starting",
       "retrieved_expected": true,
-      "groundedness": 0.6188,
-      "supported_fraction": 0.5556,
+      "groundedness": 0.6592,
+      "supported_fraction": 0.5714,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1715,
+      "tokens": 1947,
       "unsupported": [
-        "The Deployment created a new ReplicaSet, but the Pods cannot start (commonly due to image pull failures or other startup errors).",
-        "Inspect the Pod description (`kubectl describe pod <pod>`) for image pull errors, missing secrets, or other startup failures."
+        "A regression in the Deployment rollout caused pods to fail to start (e.g., bad image or configuration), leading to a stalled rollout.",
+        "Correct the Deployment spec (e.g., fix image, config) or roll back to the previous revision with `kubectl rollout undo deployment/<name>`."
       ]
     },
     {
       "case": "node-maintenance",
-      "retrieved_expected": false,
-      "groundedness": 0.5706,
-      "supported_fraction": 0.375,
-      "has_expected_terms": false,
+      "retrieved_expected": true,
+      "groundedness": 0.5586,
+      "supported_fraction": 0.5714,
+      "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1771,
+      "tokens": 1608,
       "unsupported": [
-        "The node must be taken out of service while keeping traffic flowing.",
-        "Documentation recommends adding the taint `node.kubernetes.io/out-of-service` (with `NoExecute` or `NoSchedule`) after confirming the node is already shutting down, which forces pod deletion and immediate volume detachment so pods can be rescheduled elsewhere without traffic loss."
+        "A node must be removed from service while preserving live traffic.",
+        "The classifier reports a traffic_spike, but the provided documentation does not describe traffic spikes as a cause for node removal."
       ]
     },
     {
       "case": "eviction-storm",
       "retrieved_expected": true,
-      "groundedness": 0.6559,
+      "groundedness": 0.6194,
       "supported_fraction": 0.6667,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1367,
+      "tokens": 1559,
       "unsupported": [
-        "Node drain for the upgrade triggered pod evictions that exceeded the allowed disruption budget and the cluster lacked sufficient capacity to schedule replacement pods, leading to mass evictions."
+        "Evictions were performed without respecting PodDisruptionBudgets or the built\u2011in rate\u2011limiting, causing voluntary disruptions to exceed the application\u2019s tolerance."
       ]
     },
     {
       "case": "noisy-alerts",
       "retrieved_expected": true,
-      "groundedness": 0.4176,
+      "groundedness": 0.4583,
       "supported_fraction": 0.0,
       "has_expected_terms": true,
       "parsed": true,
       "degraded": false,
-      "tokens": 1689,
+      "tokens": 1728,
       "unsupported": [
-        "The on-call rotation is being paged repeatedly for conditions that resolve themselves, likely due to transient latency spikes being reported as breaches.",
-        "According to the documentation, histogram-based latency estimates can over\u2011state the 95th\u2011percentile during sharp spikes (Excerpt\u202f[1]), and alerts that fire on high latency without considering overall user\u2011visible latency can generate unnecessary pages (Excerpt\u202f[2])."
+        "The on\u2011call team is being paged repeatedly for transient conditions that resolve themselves, likely because alerts are firing on lower\u2011level metrics or brief spikes rather than on user\u2011visible latency or error rates, as warned in the alerting guidance.",
+        "Mis\u2011configured alerts that trigger on transient traffic spikes or low\u2011level component latency instead of user\u2011visible impact Review and tighten alerting policies: only page on latency or errors that affect user experience, raise thresholds or add aggregation windows for high\u2011traffic spikes, and consider adding alert suppression or deduplication for short\u2011lived anomalies."
       ]
     },
     {
       "case": "latency-percentiles",
       "retrieved_expected": false,
-      "groundedness": 0.5443,
-      "supported_fraction": 0.4,
+      "groundedness": 0.4118,
+      "supported_fraction": 0.0,
       "has_expected_terms": false,
       "parsed": true,
       "degraded": false,
-      "tokens": 1889,
+      "tokens": 1764,
       "unsupported": [
-        "Users report the service feels slow even though average latency metrics appear normal; a memory leak is detected, which can cause memory pressure and trigger swapping, leading to I/O latency degradation for system\u2011critical daemons.",
-        "Check current swap and memory usage on the affected nodes; if swap usage is high, reduce memory consumption (e.g., restart or limit the leaking process)."
+        "The provided documentation does not contain information linking normal average latency with user\u2011perceived slowness, nor does it address memory leaks as a cause.",
+        "unknown Collect memory usage metrics and investigate for leaks; consider monitoring swap pressure and I/O latency per the swap memory management guidance; add alerts for memory pressure and I/O latency if needed."
       ]
     }
   ]

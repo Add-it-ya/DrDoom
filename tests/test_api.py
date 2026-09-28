@@ -474,6 +474,83 @@ def test_the_dashboard_uses_text_content_for_plain_fields() -> None:
     assert source.count("textContent") > 5
 
 
+# --- listing -----------------------------------------------------------------------
+
+AUTH = {"X-API-Key": KEY}
+
+
+def start(client, anomalous: bool = True) -> str:
+    return client.post("/investigate", json=window_payload(anomalous)).json()["incident_id"]
+
+
+def listed(page: dict) -> list[str]:
+    return [item["incident_id"] for item in page["incidents"]]
+
+
+def test_listing_incidents_requires_a_key(client) -> None:
+    """The list maps everything that has gone wrong, so it is not public."""
+    start(client)
+
+    assert client.get("/incidents").status_code == 401
+    assert client.get("/incidents", headers={"X-API-Key": "not-the-key"}).status_code == 401
+
+
+def test_incidents_are_listed_newest_first(client) -> None:
+    started = [start(client, anomalous) for anomalous in (True, False, True)]
+
+    page = client.get("/incidents", headers=AUTH).json()
+
+    assert listed(page) == list(reversed(started))
+    assert page["total"] == 3
+
+
+def test_the_list_is_paged(client) -> None:
+    first, second, third = (start(client) for _ in range(3))
+
+    front = client.get("/incidents?limit=2", headers=AUTH).json()
+    back = client.get("/incidents?limit=2&offset=2", headers=AUTH).json()
+
+    assert listed(front) == [third, second]
+    assert listed(back) == [first]
+    assert front["total"] == back["total"] == 3
+
+
+def test_a_listed_incident_says_where_it_stands(client) -> None:
+    incident = start(client)
+
+    [item] = client.get("/incidents", headers=AUTH).json()["incidents"]
+
+    assert item["incident_id"] == incident
+    assert item["status"] == "awaiting_approval"
+    assert item["is_anomaly"] is True
+    assert item["risk_level"] == client.get(f"/incidents/{incident}").json()["risk"]["final"]
+    assert item["updated_at"]
+
+
+def test_a_calm_window_is_listed_as_no_incident(client) -> None:
+    start(client, anomalous=False)
+
+    [item] = client.get("/incidents", headers=AUTH).json()["incidents"]
+
+    assert item["status"] == "no_incident"
+    assert item["is_anomaly"] is False
+
+
+@pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1"])
+def test_an_unreasonable_page_is_refused(client, query: str) -> None:
+    assert client.get(f"/incidents?{query}", headers=AUTH).status_code == 422
+
+
+def test_the_dashboard_sends_the_key_when_listing() -> None:
+    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    listing = source[source.index('fetch("/incidents?') :]
+
+    assert '"X-API-Key"' in listing[: listing.index(");")]
+
+
 # --- metrics -----------------------------------------------------------------------
 
 
@@ -657,6 +734,10 @@ def test_a_missing_provider_key_starts_a_degraded_service_not_a_crash(monkeypatc
     assert isinstance(provider, UnavailableProvider)
     with pytest.raises(LLMUnavailableError):
         provider.complete([])
+
+
+def test_health_names_the_reranker(client) -> None:
+    assert client.get("/health").json()["components"]["retriever"]["reranker"] == "none"
 
 
 def test_health_reports_the_risk_assessor(client) -> None:

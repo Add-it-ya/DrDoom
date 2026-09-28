@@ -33,6 +33,7 @@ from drdoom.llm.factory import build_provider_or_unavailable
 from drdoom.rag import corpus
 from drdoom.rag.index import BM25Index, DenseIndex, HybridRetriever, Retriever
 from drdoom.rag.ingest import chunk_all
+from drdoom.rag.rerank import CrossEncoderReranker, NoReranker, Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +97,15 @@ def build_detector(kind: str | None = None) -> tuple[Detector, float, list[str]]
 
 
 def build_classifier() -> Classifier | None:
+    """The trained root cause classifier, or None if there is none to load.
+
+    Its absence is a warning, not a note: the service still runs, but every incident
+    reaches diagnosis without a suspected cause, which is a quieter and worse system than
+    the one the results describe.
+    """
     directory = get_settings().models_dir / "classifier" / "synthetic"
     if not (directory / "model.json").is_file():
-        logger.info("no trained classifier at %s, incidents will be unclassified", directory)
+        logger.warning("no trained classifier at %s, incidents will be unclassified", directory)
         return None
     try:
         return Classifier.load(directory)
@@ -138,6 +145,25 @@ def build_retriever(use_dense: bool = True) -> Retriever:
     return HybridRetriever([lexical, DenseIndex(chunks, embedder, matrix=matrix)])
 
 
+def build_reranker(kind: str | None = None) -> Reranker:
+    """What reorders the retrieved shortlist before diagnosis and remediation read it.
+
+    ``DRDOOM_RERANK`` chooses it. The default is the cross-encoder, the configuration the
+    retrieval results rank first (docs/retrieval-results.md), because position decides
+    what the model reads first. ``none`` keeps the retriever's order. A cross-encoder that
+    cannot be loaded -- no weights on disk and no network -- falls back to ``none`` and
+    says so: the fused ranking underneath is still a measured, working retriever.
+    """
+    kind = kind or get_settings().rerank
+    if kind == "none":
+        return NoReranker()
+    try:
+        return CrossEncoderReranker()
+    except Exception:
+        logger.exception("could not load the cross-encoder, serving the fused ranking as it stands")
+        return NoReranker()
+
+
 def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     """Wire the whole system together for a real run."""
     from drdoom.agents.graph import make_checkpointer
@@ -146,6 +172,7 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     settings = get_settings()
     detector, threshold, feature_names = build_detector()
     retriever = build_retriever(use_dense=use_dense)
+    reranker = build_reranker()
     model = provider or build_provider_or_unavailable(settings.llm_provider)
     reviewer = model
     if provider is None and (settings.risk_provider or settings.risk_model):
@@ -164,21 +191,37 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
             classifier=build_classifier(),
             window_size=WINDOW,
         ),
-        DiagnosisAgent(retriever, model),
-        RemediationAgent(retriever, model),
+        DiagnosisAgent(retriever, model, reranker=reranker),
+        RemediationAgent(retriever, model, reranker=reranker),
         ReportingAgent(model),
         checkpointer,
         executor=DryRunExecutor(),
         audit=audit,
         risk=RiskAssessor(reviewer),
     )
-    logger.info(
-        "service ready with provider %s, risk reviewed by %s/%s",
-        model.name,
-        reviewer.name,
-        reviewer.model,
-    )
+    logger.info("service ready: %s", describe(investigator))
     return Service(investigator=investigator, audit=audit, connection=connection)
+
+
+def describe(investigator: Investigator) -> str:
+    """Every choice the running service made, in one line.
+
+    Each of these can be set by the environment or fall back at start-up, so the first
+    question about a surprising result is which configuration produced it. One line that
+    answers it is worth more than the same facts spread over a screen of start-up log.
+    """
+    triage = investigator.triage
+    diagnosis = investigator.diagnosis
+    model = diagnosis.provider
+    reviewer = investigator.risk.provider
+    return (
+        f"detector {triage.detector.name} at threshold {triage.threshold:.4f}, "
+        f"retriever {type(diagnosis.retriever).__name__}, "
+        f"reranker {diagnosis.reranker.name}, "
+        f"classifier {'loaded' if triage.classifier is not None else 'none'}, "
+        f"model {model.name}/{model.model}, "
+        f"risk reviewed by {reviewer.name}/{reviewer.model}"
+    )
 
 
 def demo_window(anomalous: bool = True) -> np.ndarray:
@@ -193,4 +236,12 @@ def demo_window(anomalous: bool = True) -> np.ndarray:
     return scenario.values[start : start + WINDOW]
 
 
-__all__ = ["build_detector", "build_retriever", "build_service", "demo_window", "window_to_series"]
+__all__ = [
+    "build_detector",
+    "build_reranker",
+    "build_retriever",
+    "build_service",
+    "demo_window",
+    "describe",
+    "window_to_series",
+]

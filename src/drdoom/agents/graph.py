@@ -110,6 +110,9 @@ class Investigation:
     status: Status
     state: dict[str, Any]
     pending: dict[str, Any] | None = None
+    # When the stored state last changed. Known when read back from the store, not when
+    # returned by the run that produced it.
+    updated_at: str | None = None
 
     @property
     def is_anomaly(self) -> bool:
@@ -172,6 +175,7 @@ class Investigator:
         self.executor = executor or DryRunExecutor()
         self.audit = audit or AuditLog()
         self.counters = counters or Counters()
+        self.checkpointer = checkpointer
         self.graph = self._build().compile(checkpointer=checkpointer)
 
     # --- nodes ---------------------------------------------------------------------
@@ -529,9 +533,34 @@ class Investigator:
         values = dict(snapshot.values or {})
         if snapshot.interrupts:
             return Investigation(
-                thread_id, "awaiting_approval", values, dict(snapshot.interrupts[0].value)
+                thread_id,
+                "awaiting_approval",
+                values,
+                dict(snapshot.interrupts[0].value),
+                updated_at=snapshot.created_at,
             )
-        return Investigation(thread_id, self._status(values), values)
+        return Investigation(
+            thread_id, self._status(values), values, updated_at=snapshot.created_at
+        )
+
+    def recent(self, limit: int, offset: int = 0) -> tuple[list[Investigation], int]:
+        """Stored investigations, newest first, and how many there are altogether.
+
+        LangGraph has no call that lists threads, so this reads the key columns of its
+        checkpoint table. Checkpoint ids are time-ordered, so a thread's smallest id marks
+        when that investigation started. The API tests pin the order, so a change to
+        either fails there rather than in front of someone.
+        """
+        with self.checkpointer.cursor(transaction=False) as cursor:
+            (total,) = cursor.execute(
+                "SELECT COUNT(DISTINCT thread_id) FROM checkpoints WHERE checkpoint_ns = ''"
+            ).fetchone()
+            rows = cursor.execute(
+                "SELECT thread_id FROM checkpoints WHERE checkpoint_ns = '' "
+                "GROUP BY thread_id ORDER BY MIN(checkpoint_id) DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [self.status(thread_id) for (thread_id,) in rows], int(total)
 
 
 def _forwarding(collector: Timings, counters: Counters):

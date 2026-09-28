@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1422,
+  "output_tokens": 303,
+  "text": "{\"summary\":\"Error rate spiked immediately after a release and remains high. The classifier identified a deploy_regression, suggesting the recent Deployment rollout may have failed or stalled.\",\"likely_cause\":\"The Deployment may have exceeded its progress deadline or encountered issues such as quota limits, readiness probe failures, image pull errors, or other runtime misconfigurations, leading to a failed rollout and increased error rates.\",\"confidence\":\"high\",\"next_action\":\"Run `kubectl rollout status deployment/<name>` to see if the Deployment exceeded its progress deadline. Inspect the Deployment's .status.conditions for Progressing=False with reason ProgressDeadlineExceeded or ReplicaFailure. Check for quota errors, readiness probe failures, or image pull errors in the events. If a failure is confirmed, consider rolling back to the previous version (`kubectl rollout undo deployment/<name>`) or fixing the underlying issue (e.g., increase quota, correct probes) and redeploy.\"}"
+}

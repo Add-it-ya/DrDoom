@@ -76,8 +76,9 @@ predecessor project to this one had no authentication on its approval endpoint a
 
 **What is done.** `/incidents/{id}/approve` requires a valid `X-API-Key`, compared in
 constant time, resolving to a **named principal** recorded in the audit log
-(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. Reading is open; deciding is
-not.
+(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. The incident list,
+`GET /incidents`, requires a key too, because it is a map of every incident and what was
+done about it. Reading a single incident, its audit trail and `/metrics` is still open.
 
 **Residual risk.** Static API keys have no expiry and no revocation beyond editing the
 configuration. For anything beyond a demonstration, short-lived tokens tied to an identity

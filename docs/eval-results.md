@@ -35,31 +35,32 @@ hit@5 from 0.725 to 0.850 and the diagnosis retrieval rate from 0.333 to 0.600.
 
 | Measure | Score | Floor |
 |---|---:|---:|
-| retrieval hit at 5 | 0.850 | 0.75 |
-| diagnosis retrieval hit | 0.600 | 0.50 |
-| groundedness | 0.594 | 0.50 |
-| supported fraction | 0.494 | 0.40 |
-| expected terms present | 0.600 | - |
+| retrieval hit at 5 | 0.875 | 0.75 |
+| diagnosis retrieval hit | 0.667 | 0.50 |
+| groundedness | 0.595 | 0.50 |
+| supported fraction | 0.528 | 0.40 |
+| expected terms present | 0.800 | - |
 | parse success | 1.000 | 1.00 |
 
-15 diagnosis cases, 40 retrieval queries, 25703 tokens across the suite.
+15 diagnosis cases, 40 retrieval queries, 28699 tokens across the suite.
+Retrieval as served: hybrid (bm25 + MiniLM), reranked by ms-marco-MiniLM-L-6-v2, from a shortlist of 30.
 
 ## Per case
 
 | Case | Found the right document | Groundedness | Expected terms |
 |---|:--:|---:|:--:|
-| memory-oom | yes | 0.661 | yes |
-| memory-namespace-cap | yes | 0.555 | yes |
-| deploy-regression | no | 0.621 | no |
-| deploy-stuck | no | 0.694 | yes |
-| deploy-surge | yes | 0.569 | no |
-| traffic-spike-scale | no | 0.518 | no |
-| traffic-spike-nodes | yes | 0.695 | yes |
-| unhealthy-pods | no | 0.610 | yes |
-| dns-failures | yes | 0.620 | yes |
-| service-unreachable | yes | 0.553 | no |
-| pods-not-starting | yes | 0.619 | yes |
-| node-maintenance | no | 0.571 | no |
-| eviction-storm | yes | 0.656 | yes |
-| noisy-alerts | yes | 0.418 | yes |
-| latency-percentiles | no | 0.544 | no |
+| memory-oom | yes | 0.463 | yes |
+| memory-namespace-cap | yes | 0.608 | yes |
+| deploy-regression | no | 0.645 | yes |
+| deploy-stuck | no | 0.768 | yes |
+| deploy-surge | yes | 0.551 | yes |
+| traffic-spike-scale | no | 0.546 | no |
+| traffic-spike-nodes | yes | 0.668 | no |
+| unhealthy-pods | no | 0.611 | yes |
+| dns-failures | yes | 0.759 | yes |
+| service-unreachable | yes | 0.606 | yes |
+| pods-not-starting | yes | 0.659 | yes |
+| node-maintenance | yes | 0.559 | yes |
+| eviction-storm | yes | 0.619 | yes |
+| noisy-alerts | yes | 0.458 | yes |
+| latency-percentiles | no | 0.412 | no |

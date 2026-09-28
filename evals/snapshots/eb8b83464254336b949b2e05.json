@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1442,
+  "output_tokens": 505,
+  "text": "{\"summary\":\"New Pods created after a configuration change are not becoming Ready, remaining stuck (e.g., in ImagePullBackOff) as described in the Deployment rollback excerpt.\",\"likely_cause\":\"A regression in the Deployment rollout caused pods to fail to start (e.g., bad image or configuration), leading to a stalled rollout.\",\"confidence\":\"medium\",\"next_action\":\"1. Run `kubectl rollout status deployment/<name>` to see the current progress condition. 2. Run `kubectl describe deployment <name>` to identify failing Pods and error messages. 3. If pods are stuck in ImagePullBackOff or similar, verify the image tag, registry access, and configuration. 4. Correct the Deployment spec (e.g., fix image, config) or roll back to the previous revision with `kubectl rollout undo deployment/<name>`. 5. After fixing, monitor pods until they reach Ready state.\"}"
+}

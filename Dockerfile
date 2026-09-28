@@ -35,16 +35,28 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app/src
 RUN python -c "from drdoom.rag import corpus; corpus.download()"
 
-# Bake the sentence-transformer weights into the image for the same reason.
+# Bake the sentence-transformer and cross-encoder weights into the image for the same
+# reason. The runtime stage is offline, so a reranker missing here would be served as no
+# reranking at all.
 ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
-SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+from drdoom.rag.rerank import CrossEncoderReranker; \
+SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
+CrossEncoderReranker()"
 
 # Embed the corpus once, here. On a CPU it takes minutes, and a container that did it on
 # every start would not answer for that long. The matrix is saved beside the corpus,
 # which the runtime stage already copies.
 RUN python -c "from drdoom.api.factory import build_retriever; build_retriever()"
+
+# Train the root cause classifier on generated incidents, with the same fixed seeds as
+# the published card. models/ is not part of the build context, so this is the only way
+# the service gets one; without it every incident reaches diagnosis unclassified.
+# train() rather than the command line, which would also rewrite the card.
+RUN python -c "\
+from drdoom.classify.train import ClassifierConfig, train; \
+train(ClassifierConfig(source='synthetic'))"
 
 
 FROM python:3.12-slim-bookworm AS runtime
@@ -57,6 +69,7 @@ WORKDIR /app
 
 COPY --from=builder --chown=drdoom:drdoom /app/.venv /app/.venv
 COPY --from=builder --chown=drdoom:drdoom /app/data/raw/corpus /app/data/raw/corpus
+COPY --from=builder --chown=drdoom:drdoom /app/models /app/models
 COPY --from=builder --chown=drdoom:drdoom /app/.cache/huggingface /home/drdoom/.cache/huggingface
 COPY --chown=drdoom:drdoom src /app/src
 COPY --chown=drdoom:drdoom web /app/web

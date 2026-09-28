@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     risk_model: str | None = None
     # What triage scores windows with. See drdoom.api.factory.build_detector.
     detector: Literal["conv", "conv+naive", "window_spread"] = "conv"
+    # What reorders the retrieved shortlist before the agents read it. See
+    # drdoom.api.factory.build_reranker.
+    rerank: Literal["cross-encoder", "none"] = "cross-encoder"
 
     @computed_field
     @property

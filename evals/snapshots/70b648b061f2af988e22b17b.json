@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1668,
+  "output_tokens": 521,
+  "text": "{\"summary\":\"Queue depth and CPU usage are rising together as request volume doubles, which aligns with the documented behavior of the API Priority and Fairness queuing system when traffic increases faster than the configured limits.\",\"likely_cause\":\"traffic_spike causing the current PriorityLevelConfiguration (queues, queueLengthLimit, handSize) to become saturated, leading to higher queued request counts and increased CPU load as described in the API Priority and Fairness documentation.\",\"confidence\":\"medium\",\"next_action\":\"1. Examine apiserver_flowcontrol metrics (e.g., apiserver_flowcontrol_request_concurrency_in_use and apiserver_flowcontrol_priority_level_request_utilization) to confirm queue saturation. 2. Review the PriorityLevelConfiguration for the affected priority level: consider increasing `queues` to reduce flow collisions, raising `queueLengthLimit` to allow larger bursts, or adjusting `handSize` to change concurrency per flow. 3. Verify GaugeHistogram metrics for queue depth are being collected correctly (see OpenMetrics GaugeHistogram format). 4. If the spike is transient, monitor for stabilization; if persistent, apply the configuration changes and observe impact on queue depth and CPU.\"}"
+}

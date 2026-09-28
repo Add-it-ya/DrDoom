@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1209,
+  "output_tokens": 399,
+  "text": "{\"summary\":\"A node must be removed from service while preserving live traffic. The classifier reports a traffic_spike, but the provided documentation does not describe traffic spikes as a cause for node removal.\",\"likely_cause\":\"traffic_spike (as reported by the classifier)\",\"confidence\":\"medium\",\"next_action\":\"1. Verify the node is already in a shutdown or power\u2011off state. 2. Add the taint node.kubernetes.io/out-of-service (NoExecute or NoSchedule) to force\u2011delete pods without matching tolerations and trigger immediate volume detach. 3. Alternatively, use kubectl drain --ignore-daemonsets <node> to evict pods, then power down the node. 4. After the node is recovered or replaced, manually remove the out-of-service taint or run kubectl uncordon <node> to resume scheduling.\"}"
+}

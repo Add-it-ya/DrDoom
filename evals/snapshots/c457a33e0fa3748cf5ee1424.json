@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1138,
+  "output_tokens": 421,
+  "text": "{\"summary\":\"During the cluster upgrade many replicas were evicted simultaneously, exceeding the desired disruption limits.\",\"likely_cause\":\"Evictions were performed without respecting PodDisruptionBudgets or the built\u2011in rate\u2011limiting, causing voluntary disruptions to exceed the application\u2019s tolerance.\",\"confidence\":\"medium\",\"next_action\":\"Create and apply appropriate PodDisruptionBudgets for affected applications; use kubectl drain (which calls the Eviction API and respects PDBs) for node upgrades; consider alternative upgrade options such as accepting downtime or failover to a replica cluster as outlined in the disruptive actions guide.\"}"
+}

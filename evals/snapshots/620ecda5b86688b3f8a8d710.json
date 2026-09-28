@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 848,
+  "output_tokens": 475,
+  "text": "{\"summary\":\"During each deployment a subset of requests fail while the old pods are terminating, indicating that the service capacity drops while the previous revision is being removed.\",\"likely_cause\":\"The Deployment is using the `Recreate` strategy (`.spec.strategy.type==Recreate`). With this strategy all existing Pods are killed before any new Pods are created, and termination of the old Pods can take a long time, temporarily reducing the number of serving Pods and causing request failures. The documentation also notes that terminating Pods may remain for a period, causing the total pod count to exceed `.spec.replicas` and further impacting capacity.\",\"confidence\":\"high\",\"next_action\":\"1. Change the Deployment strategy to `RollingUpdate` (or another non\u2011Recreate strategy) to keep old Pods running until new Pods are ready. 2. If a strict \\\"at most\\\" guarantee is required, consider migrating the workload to a StatefulSet as suggested. 3. Enable the `DeploymentReplicaSetTerminatingReplicas` feature gate on the API server and controller\u2011manager to monitor `.status.terminatingReplicas` and verify termination times. 4. Review and possibly increase the termination grace period in the Pod spec to ensure graceful shutdown without excessive delay. 5. After changes, perform a test deployment and monitor request success rates and pod termination metrics.\"}"
+}
