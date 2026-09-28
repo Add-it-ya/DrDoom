@@ -1,10 +1,12 @@
 name: ci
 
+# dr-strange is the integration branch: phase branches merge into it before it merges
+# into main, so it is checked on the same terms.
 on:
   push:
-    branches: [main]
+    branches: [main, dr-strange]
   pull_request:
-    branches: [main]
+    branches: [main, dr-strange]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
