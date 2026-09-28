@@ -49,6 +49,12 @@ searched for keywords, because a substring match reads "never roll back" as a ro
 plan that names no action is refused rather than run, and the gate shows the approver the
 exact command approval would render (`src/drdoom/executor.py`).
 
+What enters the corpus is fixed as well. Both documentation sources are pinned to one
+upstream commit and checked against a digest of their text, so a page changed upstream,
+hostile or not, reaches the corpus only when someone moves the pin and re-measures
+(`src/drdoom/rag/corpus.py`). The Server Machine Dataset is pinned and checked the same
+way (`src/drdoom/data/smd.py`).
+
 **Residual risk.** A convincing but wrong diagnosis is still possible, and the groundedness
 score in CI is a lexical proxy, not a truth check. The system reduces the *blast radius* of
 a manipulated model; it does not detect manipulation.

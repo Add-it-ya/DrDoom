@@ -4,9 +4,12 @@ Nothing here downloads a model. The hashing embedder stands in for the learned o
 ranking, fusion and reranking can be exercised offline and deterministically.
 """
 
+import re
+
 import numpy as np
 import pytest
 
+from drdoom.rag import corpus
 from drdoom.rag.corpus import SOURCES, Document, SourceSpec, _wanted, clean_markdown
 from drdoom.rag.embed import HashingEmbedder, normalise
 from drdoom.rag.index import BM25Index, DenseIndex, Hit, HybridRetriever, tokenise
@@ -51,13 +54,72 @@ def test_template_shortcodes_and_comments_are_removed() -> None:
 
 
 def test_only_markdown_inside_the_included_prefixes_is_kept() -> None:
-    assert _wanted("website-main/content/en/docs/tasks/debug.md", KUBERNETES) is not None
-    assert _wanted("website-main/content/en/docs/setup/install.md", KUBERNETES) is None
-    assert _wanted("website-main/content/en/docs/tasks/image.png", KUBERNETES) is None
+    assert (
+        _wanted(f"{KUBERNETES.strip_prefix}content/en/docs/tasks/debug.md", KUBERNETES) is not None
+    )
+    assert _wanted(f"{KUBERNETES.strip_prefix}content/en/docs/setup/install.md", KUBERNETES) is None
+    assert _wanted(f"{KUBERNETES.strip_prefix}content/en/docs/tasks/image.png", KUBERNETES) is None
 
 
 def test_section_index_pages_are_skipped() -> None:
-    assert _wanted("website-main/content/en/docs/tasks/_index.md", KUBERNETES) is None
+    assert _wanted(f"{KUBERNETES.strip_prefix}content/en/docs/tasks/_index.md", KUBERNETES) is None
+
+
+@pytest.mark.parametrize("spec", SOURCES, ids=lambda spec: spec.name)
+def test_every_source_is_pinned_to_one_commit(spec: SourceSpec) -> None:
+    """A branch head moves; the corpus every result was measured on must not."""
+    match = re.search(r"/tar\.gz/([0-9a-f]{40})$", spec.archive_url)
+
+    assert match, spec.archive_url
+    assert spec.strip_prefix.endswith(f"-{match.group(1)}/")
+    assert f"/blob/{match.group(1)}/" in spec.url_prefix
+
+
+def test_the_digest_follows_the_text_not_the_links() -> None:
+    page = make_document("k8s:a", "Set a memory limit. " * 30)
+    moved = Document(**{**page.__dict__, "url": "https://example.invalid/elsewhere"})
+    edited = Document(**{**page.__dict__, "text": page.text + " One more sentence."})
+
+    assert corpus.digest([page]) == corpus.digest([moved])
+    assert corpus.digest([page]) != corpus.digest([edited])
+
+
+def _fetching(monkeypatch, tmp_path, documents: list[Document]) -> None:
+    monkeypatch.setattr(corpus, "corpus_dir", lambda: tmp_path)
+    first = SOURCES[0].name
+    monkeypatch.setattr(
+        corpus, "fetch_source", lambda spec: documents if spec.name == first else []
+    )
+
+
+def test_a_download_that_is_not_the_pinned_corpus_is_refused(monkeypatch, tmp_path) -> None:
+    _fetching(monkeypatch, tmp_path, [make_document("kubernetes:new", "Changed upstream. " * 30)])
+
+    with pytest.raises(RuntimeError, match="pinned revision"):
+        corpus.download()
+    assert not (tmp_path / "documents.json").exists()
+
+
+def test_the_pinned_corpus_is_written(monkeypatch, tmp_path) -> None:
+    documents = [make_document("kubernetes:page", "Set a memory limit. " * 30)]
+    _fetching(monkeypatch, tmp_path, documents)
+    monkeypatch.setattr(corpus, "CORPUS_DIGEST", corpus.digest(documents))
+
+    corpus.download()
+
+    assert [d.doc_id for d in corpus.load()] == ["kubernetes:page"]
+
+
+def test_a_corpus_already_on_disk_is_checked_too(monkeypatch, tmp_path) -> None:
+    """One fetched from a moving branch before the pins existed must not pass as measured."""
+    documents = [make_document("kubernetes:page", "Set a memory limit. " * 30)]
+    _fetching(monkeypatch, tmp_path, documents)
+    monkeypatch.setattr(corpus, "CORPUS_DIGEST", corpus.digest(documents))
+    corpus.download()
+    monkeypatch.setattr(corpus, "CORPUS_DIGEST", "0" * 64)
+
+    with pytest.raises(RuntimeError, match="pinned revision"):
+        corpus.download()
 
 
 def test_archive_paths_with_traversal_are_refused() -> None:

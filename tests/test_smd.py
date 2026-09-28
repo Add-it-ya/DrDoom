@@ -5,6 +5,7 @@ cover their label run exactly, so events come from the label runs rather than fr
 interpretation file. These tests pin both behaviours.
 """
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -83,6 +84,45 @@ def test_archive_member_paths_are_made_relative_to_the_dataset() -> None:
     result = smd._safe_member_path("OmniAnomaly-master/ServerMachineDataset/train/machine-1-1.txt")
 
     assert result == Path("ServerMachineDataset/train/machine-1-1.txt")
+
+
+def test_the_archive_is_pinned_to_one_commit() -> None:
+    assert re.search(r"/tar\.gz/[0-9a-f]{40}$", smd.ARCHIVE_URL), smd.ARCHIVE_URL
+    assert smd.ARCHIVE_COMMIT in smd.ARCHIVE_URL
+
+
+def test_the_digest_covers_names_and_bytes_in_a_fixed_order(tmp_path) -> None:
+    """Upper-case LICENSE beside lower-case folders sorts differently as Windows paths."""
+    (tmp_path / "train").mkdir()
+    (tmp_path / "LICENSE").write_bytes(b"licence")
+    (tmp_path / "train" / "machine-1-1.txt").write_bytes(b"1,2,3")
+    first = smd.digest(tmp_path)
+
+    assert smd.digest(tmp_path) == first
+    (tmp_path / "train" / "machine-1-1.txt").write_bytes(b"1,2,4")
+    assert smd.digest(tmp_path) != first
+
+
+def test_a_dataset_that_is_not_the_pinned_one_is_refused(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(smd, "dataset_dir", lambda: tmp_path / smd.ARCHIVE_SUBDIR)
+    monkeypatch.setattr(smd, "is_downloaded", lambda: False)
+
+    class Archive:
+        def __init__(self, *args, **kwargs) -> None: ...
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> None: ...
+        def __iter__(self):
+            return iter(())
+
+    monkeypatch.setattr(smd.urllib.request, "urlopen", Archive)
+    monkeypatch.setattr(smd.tarfile, "open", Archive)
+    (tmp_path / smd.ARCHIVE_SUBDIR).mkdir()
+    (tmp_path / smd.ARCHIVE_SUBDIR / "LICENSE").write_bytes(b"something else")
+
+    with pytest.raises(RuntimeError, match="pinned revision"):
+        smd.download(force=True)
 
 
 @pytest.mark.requires_dataset
