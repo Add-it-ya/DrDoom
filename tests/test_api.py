@@ -464,11 +464,13 @@ def test_hostile_model_output_is_returned_as_data_not_markup(tmp_path) -> None:
     assert "&lt;script&gt;" not in body["diagnosis"]["summary"]
 
 
+def web(name: str) -> str:
+    return (Path(__file__).resolve().parents[1] / "web" / name).read_text(encoding="utf-8")
+
+
 def test_the_dashboard_never_assigns_api_data_to_inner_html() -> None:
     """A structural guard: the sanitiser is the only route from model text to markup."""
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    source = web("app.js")
 
     assignments = re.findall(r"innerHTML\s*=\s*(.*?);", source, re.DOTALL)
 
@@ -477,22 +479,16 @@ def test_the_dashboard_never_assigns_api_data_to_inner_html() -> None:
         assert "DOMPurify.sanitize" in expression, f"unsanitised assignment: {expression!r}"
 
 
-def test_the_dashboard_loads_a_sanitiser() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+def test_the_dashboard_loads_a_sanitiser_before_its_script() -> None:
+    page = web("index.html")
 
-    assert "dompurify" in source.lower()
-    assert source.index("purify.min.js") < source.index("DOMPurify.sanitize")
+    assert page.index("purify.min.js") < page.index('<script src="app.js">')
+    assert "DOMPurify.sanitize" in web("app.js")
 
 
 def test_every_script_from_elsewhere_is_pinned_by_hash() -> None:
     """A compromised CDN would otherwise replace the sanitiser the page relies on."""
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
-
-    external = re.findall(r"<script\s[^>]*src=\"https?://[^>]*>", source)
+    external = re.findall(r"<script\s[^>]*src=\"https?://[^>]*>", web("index.html"))
 
     assert len(external) == 2
     for tag in external:
@@ -501,11 +497,56 @@ def test_every_script_from_elsewhere_is_pinned_by_hash() -> None:
 
 
 def test_the_dashboard_uses_text_content_for_plain_fields() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    assert web("app.js").count("textContent") > 5
 
-    assert source.count("textContent") > 5
+
+def test_the_page_has_nothing_inline_for_the_policy_to_allow() -> None:
+    """The policy refuses inline script and style, so the page must not need either."""
+    page = web("index.html")
+
+    assert "<style" not in page
+    assert all("src=" in tag for tag in re.findall(r"<script[^>]*>", page))
+    assert not re.search(r"\son[a-z]+\s*=", page), "inline event handler"
+    assert not re.search(r"\sstyle\s*=", page), "inline style attribute"
+
+
+def test_the_policy_allows_exactly_the_scripts_the_page_loads() -> None:
+    from drdoom.api.headers import CDN_SCRIPTS
+
+    loaded = re.findall(r'<script\s[^>]*src="(https?://[^"]+)"', web("index.html"))
+
+    assert sorted(loaded) == sorted(CDN_SCRIPTS)
+
+
+def test_the_dashboard_is_served_with_a_content_security_policy(client) -> None:
+    response = client.get("/")
+    policy = response.headers["content-security-policy"]
+    directives = dict(item.strip().split(" ", 1) for item in policy.split(";"))
+
+    assert response.status_code == 200
+    assert "unsafe-inline" not in policy and "unsafe-eval" not in policy
+    assert directives["default-src"] == "'none'"
+    assert directives["script-src"].split()[0] == "'self'"
+    assert directives["connect-src"] == "'self'"
+    assert directives["img-src"] == "'self'"
+    assert directives["frame-ancestors"] == "'none'"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_api_responses_carry_the_policy_too(client) -> None:
+    """A json body opened directly in a browser is a page as well."""
+    assert "content-security-policy" in client.get("/health").headers
+    assert "content-security-policy" in client.get("/incidents", headers=AUTH).headers
+
+
+def test_the_interactive_docs_are_left_out_of_the_policy(client) -> None:
+    """They load their own scripts from another CDN; they show the schema, not model text."""
+    response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "content-security-policy" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 # --- listing -----------------------------------------------------------------------
@@ -577,9 +618,7 @@ def test_an_unreasonable_page_is_refused(client, query: str) -> None:
 
 
 def test_the_dashboard_sends_the_key_when_listing() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    source = web("app.js")
 
     listing = source[source.index('fetch("/incidents?') :]
 
@@ -587,9 +626,7 @@ def test_the_dashboard_sends_the_key_when_listing() -> None:
 
 
 def test_the_dashboard_sends_the_key_when_opening_an_incident() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    source = web("app.js")
 
     opening = source[source.index('fetch("/incidents/" + encodeURIComponent(id)') :]
 

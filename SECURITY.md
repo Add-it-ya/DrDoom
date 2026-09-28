@@ -78,8 +78,18 @@ sanitiser the postmortem is not rendered at all, so a tampered CDN makes the pag
 closed rather than open (`web/index.html`; a test requires a hash on every external
 script).
 
-**Residual risk.** The sanitiser is the only thing between model text and markup; there
-is no Content Security Policy behind it yet. That is listed below.
+Behind the sanitiser, every response carries a Content Security Policy
+(`src/drdoom/api/headers.py`). The page's script and styles are files of their own, so the
+policy allows no inline script or style at all, script only from this origin and the two
+pinned CDN files, connections only to this origin, and images only from this origin,
+which closes the usual way injected markup carries data out. The page cannot be framed,
+so another site cannot overlay the approve button. Tests check that the page needs
+nothing inline and that the policy names exactly the scripts the page loads.
+
+**Residual risk.** The policy does not cover FastAPI's interactive docs at `/docs` and
+`/redoc`, which load their own scripts from another CDN and run inline code; they render
+the api's schema, not model output. The CDN scripts are allowed by URL and pinned by hash,
+so they are only as trustworthy as the versions chosen.
 
 ### 3. Approving an action nobody approved
 
@@ -180,8 +190,7 @@ from anywhere else.
 2. **Short-lived credentials.** Static API keys have no expiry or revocation path.
 3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
    rewrite history undetected.
-4. **A Content Security Policy.** Defence in depth behind the sanitiser.
-5. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
+4. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 
 ---

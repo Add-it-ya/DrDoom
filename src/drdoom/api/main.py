@@ -24,7 +24,8 @@ model call, and never reaches the approval gate as a phantom incident.
 
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
-a sanitiser. See the note in ``web/index.html``.
+a sanitiser. See the note in ``web/index.html``. Every response carries a Content Security
+Policy as the layer behind the sanitiser (``api/headers.py``).
 
 **Health describes the parts, not the process.** ``/health`` says whether a model is
 configured, whether anyone can approve, and whether the investigation store answers. A
@@ -53,6 +54,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
 from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
+from drdoom.api.headers import SecurityHeaders
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings, load_env_file
 from drdoom.llm.factory import UnavailableProvider
@@ -349,6 +351,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         summary="Autonomous incident response with a human approval gate",
         lifespan=lifespan,
     )
+    docs = (app.docs_url, app.redoc_url, app.swagger_ui_oauth2_redirect_url)
+    app.add_middleware(SecurityHeaders, exempt=frozenset(path for path in docs if path))
 
     @app.get("/health")
     def health() -> JSONResponse:
