@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1701,
+  "output_tokens": 650,
+  "text": "{\"summary\":\"Services are intermittently failing DNS resolution of other services\",\"likely_cause\":\"CoreDNS add\u2011on or its Service (kube-dns) is experiencing issues (e.g., mis\u2011configured resolv.conf, forwarding loop with systemd\u2011resolved, or nameserver limit) causing DNS queries to fail\",\"confidence\":\"medium\",\"next_action\":\"kubectl exec -ti dnsutils -- cat /etc/resolv.conf && verify nameserver/search path; kubectl exec -ti dnsutils -- nslookup kubernetes.default to confirm CoreDNS response; kubectl get pods -n kube-system -l k8s-app=kube-dns && kubectl logs <coredns-pod> for errors; ensure node resolv.conf points to the correct CoreDNS IP (use /run/systemd/resolve/resolv.conf if systemd-resolved) or set kubelet --resolv-conf flag; if 3\u2011nameserver limit is hit, deploy dnsmasq or adjust kubelet flag\"}"
+}

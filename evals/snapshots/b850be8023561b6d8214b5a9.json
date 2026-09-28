@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 915,
+  "output_tokens": 424,
+  "text": "{\n  \"summary\":\"A single namespace is consuming all available memory on the cluster.\",\n  \"likely_cause\":\"The namespace likely lacks memory limits or default limits, allowing containers to use unlimited memory (see documentation on missing limits and the role of LimitRange and ResourceQuota).\",\n  \"confidence\":\"medium\",\n  \"next_action\":\"Create or update a LimitRange to set minimum/maximum and default memory limits for the namespace, and add a ResourceQuota to cap total memory consumption. Then verify that all Pods in the namespace have explicit memory requests/limits and adjust workloads accordingly.\"\n}"
+}

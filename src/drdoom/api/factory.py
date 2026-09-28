@@ -33,6 +33,7 @@ from drdoom.llm.factory import build_provider_or_unavailable
 from drdoom.rag import corpus
 from drdoom.rag.index import BM25Index, DenseIndex, HybridRetriever, Retriever
 from drdoom.rag.ingest import chunk_all
+from drdoom.rag.rerank import CrossEncoderReranker, NoReranker, Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,25 @@ def build_retriever(use_dense: bool = True) -> Retriever:
     return HybridRetriever([lexical, DenseIndex(chunks, embedder, matrix=matrix)])
 
 
+def build_reranker(kind: str | None = None) -> Reranker:
+    """What reorders the retrieved shortlist before diagnosis and remediation read it.
+
+    ``DRDOOM_RERANK`` chooses it. The default is the cross-encoder, the configuration the
+    retrieval results rank first (docs/retrieval-results.md), because position decides
+    what the model reads first. ``none`` keeps the retriever's order. A cross-encoder that
+    cannot be loaded -- no weights on disk and no network -- falls back to ``none`` and
+    says so: the fused ranking underneath is still a measured, working retriever.
+    """
+    kind = kind or get_settings().rerank
+    if kind == "none":
+        return NoReranker()
+    try:
+        return CrossEncoderReranker()
+    except Exception:
+        logger.exception("could not load the cross-encoder, serving the fused ranking as it stands")
+        return NoReranker()
+
+
 def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     """Wire the whole system together for a real run."""
     from drdoom.agents.graph import make_checkpointer
@@ -152,6 +172,7 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
     settings = get_settings()
     detector, threshold, feature_names = build_detector()
     retriever = build_retriever(use_dense=use_dense)
+    reranker = build_reranker()
     model = provider or build_provider_or_unavailable(settings.llm_provider)
     reviewer = model
     if provider is None and (settings.risk_provider or settings.risk_model):
@@ -170,8 +191,8 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
             classifier=build_classifier(),
             window_size=WINDOW,
         ),
-        DiagnosisAgent(retriever, model),
-        RemediationAgent(retriever, model),
+        DiagnosisAgent(retriever, model, reranker=reranker),
+        RemediationAgent(retriever, model, reranker=reranker),
         ReportingAgent(model),
         checkpointer,
         executor=DryRunExecutor(),
@@ -217,6 +238,7 @@ def demo_window(anomalous: bool = True) -> np.ndarray:
 
 __all__ = [
     "build_detector",
+    "build_reranker",
     "build_retriever",
     "build_service",
     "demo_window",

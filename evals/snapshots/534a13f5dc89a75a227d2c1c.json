@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1280,
+  "output_tokens": 484,
+  "text": "{\"summary\":\"The provided documentation does not contain information linking normal average latency with user\u2011perceived slowness, nor does it address memory leaks as a cause.\",\"likely_cause\":\"unknown\",\"confidence\":\"low\",\"next_action\":\"Collect memory usage metrics and investigate for leaks; consider monitoring swap pressure and I/O latency per the swap memory management guidance; add alerts for memory pressure and I/O latency if needed.\"}"
+}

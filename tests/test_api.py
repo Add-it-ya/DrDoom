@@ -659,6 +659,10 @@ def test_a_missing_provider_key_starts_a_degraded_service_not_a_crash(monkeypatc
         provider.complete([])
 
 
+def test_health_names_the_reranker(client) -> None:
+    assert client.get("/health").json()["components"]["retriever"]["reranker"] == "none"
+
+
 def test_health_reports_the_risk_assessor(client) -> None:
     assert client.get("/health").json()["components"]["risk_assessor"]["ready"] is True
 

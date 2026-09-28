@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1397,
+  "output_tokens": 380,
+  "text": "{\n  \"summary\": \"The container's memory usage increased continuously for ~40 minutes until the kernel OOM killer terminated the process, resulting in the pod entering an OOMKilled state and being repeatedly restarted.\",\n  \"likely_cause\": \"Out\u2011of\u2011memory condition caused by the container exceeding its memory limit (potential memory leak or workload that allocates more memory than the configured limit).\",\n  \"confidence\": \"medium\",\n  \"next_action\": \"1. Inspect the pod spec to verify the memory request and limit values (kubectl describe pod <pod> --namespace=mem-example). 2. If limits are too low for the workload, increase the memory limit or add a memory request that matches expected usage. 3. If limits are appropriate, investigate the application for a memory leak (e.g., profile memory usage, check logs). 4. Delete and recreate the pod after adjusting limits to clear the OOM state (kubectl delete pod <pod> --namespace=mem-example). 5. Monitor the pod after restart to confirm memory usage stabilises.\"\n}"
+}

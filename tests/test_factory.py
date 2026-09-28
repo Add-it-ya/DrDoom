@@ -122,6 +122,7 @@ def test_start_up_names_the_whole_configuration_in_one_line(monkeypatch, tmp_pat
     from drdoom.rag.corpus import Document
     from drdoom.rag.index import BM25Index
     from drdoom.rag.ingest import chunk_all
+    from drdoom.rag.rerank import NoReranker
 
     document = Document(
         doc_id="k8s:memory",
@@ -138,6 +139,7 @@ def test_start_up_names_the_whole_configuration_in_one_line(monkeypatch, tmp_pat
         factory, "build_retriever", lambda use_dense=True: BM25Index(chunk_all([document]))
     )
     monkeypatch.setattr(factory, "build_classifier", lambda: None)
+    monkeypatch.setattr(factory, "build_reranker", lambda: NoReranker())
     monkeypatch.setattr(factory, "checkpoint_path", lambda: tmp_path / "state.sqlite")
     monkeypatch.setattr(factory, "AuditLog", lambda: AuditLog(tmp_path / "audit.jsonl"))
 
@@ -150,3 +152,34 @@ def test_start_up_names_the_whole_configuration_in_one_line(monkeypatch, tmp_pat
         "service ready: detector window_spread at threshold 0.1234, retriever BM25Index, "
         "reranker none, classifier none, model stub/stub-1, risk reviewed by stub/stub-1"
     )
+
+
+def test_the_cross_encoder_is_the_default_reranker(monkeypatch) -> None:
+    from drdoom.api import factory
+
+    class Loaded:
+        name = "ms-marco-MiniLM-L-6-v2"
+
+    monkeypatch.setattr(factory, "CrossEncoderReranker", Loaded)
+
+    assert factory.build_reranker().name == "ms-marco-MiniLM-L-6-v2"
+
+
+def test_rerank_none_keeps_the_retriever_order() -> None:
+    from drdoom.api.factory import build_reranker
+
+    assert build_reranker("none").name == "none"
+
+
+def test_a_cross_encoder_that_cannot_load_falls_back_to_no_reranking(monkeypatch, caplog) -> None:
+    """No weights and no network should cost the reranking, not the service."""
+    from drdoom.api import factory
+
+    def unavailable():
+        raise OSError("no weights on disk and HF_HUB_OFFLINE is set")
+
+    monkeypatch.setattr(factory, "CrossEncoderReranker", unavailable)
+
+    with caplog.at_level("ERROR", logger="drdoom.api.factory"):
+        assert factory.build_reranker("cross-encoder").name == "none"
+    assert "cross-encoder" in caplog.text

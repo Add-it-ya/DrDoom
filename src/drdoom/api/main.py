@@ -205,6 +205,7 @@ class Service:
             "retriever": {
                 "ready": True,
                 "name": type(self.investigator.diagnosis.retriever).__name__,
+                "reranker": self.investigator.diagnosis.reranker.name,
             },
         }
         if not store_ready:

@@ -23,15 +23,16 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from drdoom.agents.diagnosis import DiagnosisAgent, format_passages
+from drdoom.agents.diagnosis import SHORTLIST_DEPTH, DiagnosisAgent, format_passages
 from drdoom.config import get_settings
 from drdoom.evals.groundedness import score_text
 from drdoom.llm.base import LLMProvider
 from drdoom.llm.recording import RecordingProvider, ReplayProvider, SnapshotStore
 from drdoom.rag import corpus
+from drdoom.rag.evaluate import RetrievalMetrics, load_queries
 from drdoom.rag.evaluate import evaluate as evaluate_retrieval
-from drdoom.rag.evaluate import load_queries
 from drdoom.rag.index import Retriever
+from drdoom.rag.rerank import Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,25 @@ def build_retriever() -> Retriever:
     return build_shipped(use_dense=True)
 
 
+def build_reranker() -> Reranker:
+    """The reranker the service runs, for the same reason as the retriever."""
+    from drdoom.api.factory import build_reranker as build_shipped
+
+    return build_shipped()
+
+
+def describe_retrieval(reranker: Reranker) -> str:
+    order = "not reranked" if reranker.name == "none" else f"reranked by {reranker.name}"
+    return f"hybrid (bm25 + MiniLM), {order}, from a shortlist of {SHORTLIST_DEPTH}"
+
+
+def score_retrieval(retriever: Retriever, reranker: Reranker) -> RetrievalMetrics:
+    """Retrieval as the agents see it: the same shortlist depth, the same reranker."""
+    return evaluate_retrieval(
+        describe_retrieval(reranker), retriever, load_queries(), reranker, depth=SHORTLIST_DEPTH
+    )
+
+
 def run_case(agent: DiagnosisAgent, case: dict) -> CaseResult:
     """Diagnose one scenario and score what came back against what was retrieved."""
     outcome = agent.run(case["symptoms"], case.get("root_cause"))
@@ -148,6 +168,7 @@ def summarise(results: list[CaseResult], retrieval: dict) -> dict:
         "retrieval_hit_at_5": retrieval["hit_at_5"],
         "retrieval_mrr": retrieval["mrr"],
         "retrieval_queries": retrieval["queries"],
+        "retrieval_configuration": retrieval.get("configuration", "not recorded"),
         "diagnosis_retrieval_hit": sum(r.retrieved_expected for r in results) / total,
         "groundedness": sum(r.groundedness for r in results) / total,
         "supported_fraction": sum(r.supported_fraction for r in results) / total,
@@ -225,6 +246,7 @@ def render_markdown(summary: dict, results: list[CaseResult], failures: list[str
         "",
         f"{summary['cases']} diagnosis cases, {summary['retrieval_queries']} retrieval queries, "
         f"{summary['total_tokens']} tokens across the suite.",
+        f"Retrieval as served: {summary.get('retrieval_configuration', 'not recorded')}.",
         "",
         "## Per case",
         "",
@@ -243,12 +265,12 @@ def render_markdown(summary: dict, results: list[CaseResult], failures: list[str
     return "\n".join(lines)
 
 
-def _retrieval_only(retriever: Retriever, out: Path | None) -> int:
+def _retrieval_only(retriever: Retriever, reranker: Reranker, out: Path | None) -> int:
     """Score what can be scored without a model, and say plainly what was skipped.
 
     Exits zero: an unrecorded suite is a gap to fill, not a regression to block on.
     """
-    metrics = evaluate_retrieval("hybrid", retriever, load_queries())
+    metrics = score_retrieval(retriever, reranker)
     docs = out or get_settings().project_root / "docs"
     docs.mkdir(parents=True, exist_ok=True)
 
@@ -295,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     retriever = build_retriever()
+    reranker = build_reranker()
     store = SnapshotStore(snapshot_dir())
     if not args.record and len(store) == 0:
         logger.warning(
@@ -302,16 +325,17 @@ def main(argv: list[str] | None = None) -> int:
             "Refresh it with: python -m drdoom.evals.run --record",
             snapshot_dir(),
         )
-        return _retrieval_only(retriever, args.out)
+        return _retrieval_only(retriever, reranker, args.out)
 
     provider = build_provider_for(args.record, args.provider)
-    agent = DiagnosisAgent(retriever, provider)
+    agent = DiagnosisAgent(retriever, provider, reranker=reranker)
 
-    retrieval_metrics = evaluate_retrieval("hybrid", retriever, load_queries())
+    retrieval_metrics = score_retrieval(retriever, reranker)
     retrieval = {
         "hit_at_5": retrieval_metrics.hit_rate[5],
         "mrr": retrieval_metrics.mrr,
         "queries": retrieval_metrics.n_queries,
+        "configuration": retrieval_metrics.configuration,
     }
 
     results = [run_case(agent, case) for case in load_cases()]

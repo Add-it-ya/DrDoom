@@ -146,6 +146,13 @@ is the clearest case: it adds little to hit rate but moves MRR from 0.617 to 0.6
 is what reranking is for — it does not find more, it orders better, and position decides
 what fits in the model's context.
 
+The last row is what the service runs. Diagnosis and remediation each rerank a 30-passage
+hybrid shortlist with the cross-encoder, which scores the same as the 50-passage shortlist
+above (hit@5 0.875, MRR 0.699 in [docs/eval-results.json](docs/eval-results.json)) for
+three-fifths of the scoring. The cost is two cross-encoder passes per investigation on the
+CPU; `DRDOOM_RERANK=none` serves the hybrid ranking alone, and `/health` names the
+reranker in use.
+
 The dense index is plain numpy. At a few thousand chunks an exact dot product is well
 under a millisecond; a vector service earns its place when the corpus outgrows memory or
 needs concurrent writers, and adding one earlier would be the unjustified machinery this
@@ -277,15 +284,21 @@ sources* — the question worth asking of a machine-written diagnosis — not as
 
 | Measure | Score | Floor |
 |---|---:|---:|
-| retrieval hit@5 | 0.850 | 0.75 |
-| diagnosis retrieved the right document | 0.600 | 0.50 |
-| groundedness | 0.594 | 0.50 |
-| supported sentence fraction | 0.494 | 0.40 |
+| retrieval hit@5 | 0.875 | 0.75 |
+| diagnosis retrieved the right document | 0.667 | 0.50 |
+| groundedness | 0.595 | 0.50 |
+| supported sentence fraction | 0.528 | 0.40 |
 | structured output parsed | 1.000 | 1.00 |
 
 Full report in [docs/eval-results.md](docs/eval-results.md). Floors sit *below* the
 measured baseline on purpose — a floor set from an aspiration makes the suite permanently
 red and therefore ignored.
+
+These scores are for the retrieval the service runs, cross-encoder reranking included.
+Serving the reranker moved the two retrieval rows from 0.850 and 0.600, and those rows
+depend on retrieval alone. The three rows scoring the written diagnosis come from one
+recording of a model that does not answer the same way twice, so a change in them
+between recordings is partly the model and not only the retrieval.
 
 The suite's most useful finding was about itself. An early version scored lexical
 retrieval alone and reported numbers the deployed system would never produce. Symptom
