@@ -183,20 +183,53 @@ class Scaler:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Names as fixed-width text rather than Python objects, so loading needs no pickle.
         np.savez(
             path,
             means=self.means,
             stds=self.stds,
-            feature_names=np.array(self.feature_names, dtype=object),
+            feature_names=np.array(self.feature_names, dtype=np.str_),
         )
 
     @classmethod
     def load(cls, path: Path, expected_features: list[str] | None = None) -> Scaler:
-        payload = np.load(path, allow_pickle=True)
-        names = tuple(str(name) for name in payload["feature_names"])
+        """Read a saved scaler without unpickling anything.
+
+        Loading with pickling allowed runs whatever code the file names, which turns a data
+        file into a program. Earlier versions saved the names as pickled objects; such a
+        file is refused with the way to convert it.
+        """
+        try:
+            with np.load(path, allow_pickle=False) as payload:
+                means, stds = payload["means"], payload["stds"]
+                names = tuple(str(name) for name in payload["feature_names"])
+        except ValueError as error:
+            if "allow_pickle" not in str(error):
+                raise
+            raise ValueError(
+                f"{path} was saved by an earlier version with pickled feature names. "
+                "Rebuild it with python -m drdoom.data.build, or, if you wrote the file "
+                "yourself, convert it with Scaler.upgrade(path)"
+            ) from error
         if expected_features is not None and tuple(expected_features) != names:
             raise ValueError(
                 "scaler feature order does not match the caller: "
                 f"saved {names[:3]}... vs expected {tuple(expected_features)[:3]}..."
             )
-        return cls(means=payload["means"], stds=payload["stds"], feature_names=names)
+        return cls(means=means, stds=stds, feature_names=names)
+
+    @classmethod
+    def upgrade(cls, path: Path) -> Scaler:
+        """Rewrite a scaler saved with pickled feature names in the current format.
+
+        The one place a scaler is unpickled, and only when asked. Use it on files this
+        project wrote, never on one that came from somewhere else.
+        """
+        with np.load(path, allow_pickle=True) as payload:
+            scaler = cls(
+                means=payload["means"],
+                stds=payload["stds"],
+                feature_names=tuple(str(name) for name in payload["feature_names"]),
+            )
+        scaler.save(path)
+        return scaler

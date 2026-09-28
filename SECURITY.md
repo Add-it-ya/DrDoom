@@ -146,6 +146,23 @@ reported.
 quota drained by anyone who finds it. This is the largest open issue and is called out
 first below.
 
+### 8. Code hidden in a data file
+
+**Attack.** Replace a saved model or scaler with a file that runs code when it is loaded.
+Python's pickle, which `torch.load` and `np.load` fall back on when allowed to, executes
+whatever the file tells it to.
+
+**What is done.** Nothing this project loads is unpickled. Detector checkpoints load with
+`torch.load(..., weights_only=True)`, the classifier from XGBoost's JSON format, and
+scalers with `np.load(..., allow_pickle=False)`: their feature names are saved as text,
+and a scaler in the earlier pickled format is refused with the way to convert it
+(`src/drdoom/data/windows.py`). The service fits its scaler at startup rather than loading
+one.
+
+**Residual risk.** `Scaler.upgrade` unpickles by design, once and only when called, to
+convert a file this project wrote in the earlier format. It must not be pointed at a file
+from anywhere else.
+
 ---
 
 ## Known gaps, in the order they should be closed

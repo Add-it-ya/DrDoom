@@ -122,6 +122,46 @@ def test_scaler_round_trips_through_disk(tmp_path) -> None:
     assert restored.feature_names == ("a", "b")
 
 
+def test_a_saved_scaler_loads_without_pickle(tmp_path) -> None:
+    path = tmp_path / "scaler.npz"
+    windows.Scaler.fit([make_series("a", 300, [])]).save(path)
+
+    with np.load(path, allow_pickle=False) as payload:
+        assert payload["feature_names"].dtype.kind == "U"
+
+
+def save_legacy(path, scaler: windows.Scaler) -> None:
+    """The format earlier versions wrote: feature names as pickled objects."""
+    np.savez(
+        path,
+        means=scaler.means,
+        stds=scaler.stds,
+        feature_names=np.array(scaler.feature_names, dtype=object),
+    )
+
+
+def test_a_scaler_with_pickled_names_is_refused(tmp_path) -> None:
+    """np.load with pickling allowed would run whatever the file tells it to."""
+    path = tmp_path / "scaler.npz"
+    save_legacy(path, windows.Scaler.fit([make_series("a", 300, [])]))
+
+    with pytest.raises(ValueError, match="pickled feature names"):
+        windows.Scaler.load(path)
+
+
+def test_an_old_scaler_can_be_upgraded_in_place(tmp_path) -> None:
+    path = tmp_path / "scaler.npz"
+    original = windows.Scaler.fit([make_series("a", 300, [])])
+    save_legacy(path, original)
+
+    windows.Scaler.upgrade(path)
+    restored = windows.Scaler.load(path, expected_features=["a", "b"])
+
+    assert np.array_equal(restored.means, original.means)
+    assert np.array_equal(restored.stds, original.stds)
+    assert restored.feature_names == ("a", "b")
+
+
 def test_loading_a_scaler_with_a_different_feature_order_fails(tmp_path) -> None:
     path = tmp_path / "scaler.npz"
     windows.Scaler.fit([make_series("a", 300, [])]).save(path)
