@@ -44,7 +44,8 @@ jobs:
   evaluate:
     # Scores the generated half against recorded model responses, so it costs
     # nothing and gives the same answer every run. Fails the build when a score
-    # falls below its floor.
+    # falls below its floor, or when any case degrades (usually a missing
+    # recording after a prompt or retrieval change).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

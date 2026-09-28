@@ -282,9 +282,9 @@ described the classical half, which is the easy half to measure.
 
 The suite scores retrieval and the groundedness of generated diagnoses over 15 labelled
 incident scenarios and 40 retrieval queries, and CI fails the build when a score drops
-below its floor. It runs against **recorded** model responses, so it is free, offline and
-identical on every run — which is what lets it gate a merge rather than being a script
-somebody runs occasionally.
+below its floor or any case degrades. It runs against **recorded** model responses, so it
+is free, offline and identical on every run — which is what lets it gate a merge rather
+than being a script somebody runs occasionally.
 
 **Groundedness here is lexical support, not entailment.** Each sentence of a diagnosis is
 scored by how much of its distinctive vocabulary appears in the passages retrieved for it.
