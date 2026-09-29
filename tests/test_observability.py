@@ -2,6 +2,8 @@
 
 import json
 import logging
+import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from drdoom.observability import (
     Counters,
@@ -149,3 +151,43 @@ def test_a_stage_with_one_sample_reports_it() -> None:
 
 def test_an_empty_snapshot_has_no_stages() -> None:
     assert Counters().snapshot() == {"events": {}, "stages": {}}
+
+
+def test_percentiles_cover_the_recent_window_and_memory_stays_flat() -> None:
+    """Every observation used to be kept for the life of the process."""
+    counters = Counters(window=100)
+    for value in range(10_000):
+        counters.observe("triage", float(value))
+
+    stage = counters.snapshot()["stages"]["triage"]
+
+    assert len(counters.latencies["triage"]) == 100
+    assert stage["count"] == 10_000
+    assert stage["sampled"] == 100
+    assert stage["p50_ms"] >= 9_900
+
+
+def test_counts_from_many_threads_are_all_kept() -> None:
+    """With threads switched constantly, an unlocked count kept 45,904 of 160,000."""
+    counters = Counters()
+    reads: list[dict] = []
+
+    def work(_: int) -> None:
+        for value in range(5_000):
+            counters.increment("investigate")
+            counters.observe("triage", float(value))
+            if value % 500 == 0:
+                reads.append(counters.snapshot())
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        with ThreadPoolExecutor(8) as pool:
+            list(pool.map(work, range(8)))
+    finally:
+        sys.setswitchinterval(interval)
+
+    snapshot = counters.snapshot()
+    assert snapshot["events"]["investigate"] == 40_000
+    assert snapshot["stages"]["triage"]["count"] == 40_000
+    assert len(reads) == 80

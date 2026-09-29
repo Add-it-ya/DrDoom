@@ -203,10 +203,11 @@ class Service:
     audit: AuditLog
     connection: Any = None  # held so the checkpointer's sqlite handle outlives startup
     started_at: float = field(default_factory=time.monotonic)
-    counters: dict[str, int] = field(default_factory=dict)
 
     def count(self, name: str) -> None:
-        self.counters[name] = self.counters.get(name, 0) + 1
+        # The investigator's counters take a lock; a plain dict here lost increments when
+        # two requests landed together.
+        self.investigator.counters.increment(name)
 
     @property
     def stage_latencies(self) -> dict[str, Any]:
@@ -374,11 +375,11 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         the service is used, which is nobody else's business.
         """
         valid, reason = current.audit.verify()
-        latencies = current.stage_latencies
+        snapshot = current.stage_latencies
         return {
             "uptime_seconds": round(time.monotonic() - current.started_at, 1),
-            "requests": dict(current.counters),
-            "stages": latencies["stages"],
+            "requests": snapshot["events"],
+            "stages": snapshot["stages"],
             "audit_entries": len(current.audit.entries()),
             "audit_chain_intact": valid,
             "audit_chain_detail": reason,
