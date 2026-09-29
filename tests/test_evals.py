@@ -220,6 +220,14 @@ def test_a_parse_failure_is_caught() -> None:
     assert check(sample_summary(parse_success=0.95))
 
 
+def test_a_degraded_case_fails_the_run_even_when_every_floor_holds() -> None:
+    """One missing recording lowers the averages without breaking a floor."""
+    failures = check(sample_summary(degraded=1))
+
+    assert len(failures) == 1
+    assert failures[0].startswith("degraded: 1 case(s)")
+
+
 def test_several_regressions_are_all_reported() -> None:
     assert len(check(sample_summary(groundedness=0.1, retrieval_hit_at_5=0.1))) == 2
 
@@ -253,6 +261,13 @@ def test_the_report_states_what_the_measure_is_not() -> None:
     assert "proxy for entailment, not entailment" in text
     assert "| Measure | Score | Floor |" in text
     assert "| a |" in text
+
+
+def test_the_report_states_that_a_degraded_case_fails_the_build() -> None:
+    text = render_markdown(sample_summary(), [], [])
+
+    assert "or when any case degrades" in text
+    assert "0 degraded; any degraded case fails the build." in text
 
 
 def test_failures_are_listed_in_the_report() -> None:
@@ -293,9 +308,9 @@ def test_replay_without_a_manifest_still_reports_a_miss(tmp_path) -> None:
         provider.complete([user("never recorded")])
 
 
-def test_an_unparseable_diagnosis_is_scored_as_a_parse_failure_not_a_crash() -> None:
+def one_document_agent(provider):
+    """A diagnosis agent over a single memory-limit page."""
     from drdoom.agents.diagnosis import DiagnosisAgent
-    from drdoom.evals.run import run_case
     from drdoom.rag.corpus import Document
     from drdoom.rag.index import BM25Index
     from drdoom.rag.ingest import chunk_all
@@ -309,7 +324,13 @@ def test_an_unparseable_diagnosis_is_scored_as_a_parse_failure_not_a_crash() -> 
         url="https://example.invalid/memory",
         licence="CC-BY-4.0",
     )
-    agent = DiagnosisAgent(BM25Index(chunk_all([document])), StubProvider(default="no json"))
+    return DiagnosisAgent(BM25Index(chunk_all([document])), provider)
+
+
+def test_an_unparseable_diagnosis_is_scored_as_a_parse_failure_not_a_crash() -> None:
+    from drdoom.evals.run import run_case
+
+    agent = one_document_agent(StubProvider(default="no json"))
     case = {"id": "c1", "symptoms": "memory climbing", "relevant": ["k8s:memory"]}
 
     result = run_case(agent, case)
@@ -319,6 +340,25 @@ def test_an_unparseable_diagnosis_is_scored_as_a_parse_failure_not_a_crash() -> 
     assert result.groundedness == 0.0
     assert result.tokens > 0
     assert summarise([result], {"hit_at_5": 1.0, "mrr": 1.0, "queries": 1})["parse_success"] == 0
+
+
+def test_a_replay_miss_degrades_the_case_and_fails_the_run(tmp_path) -> None:
+    """What CI sees after a prompt or retrieval change without a fresh recording."""
+    from drdoom.evals.run import run_case
+
+    provider = ReplayProvider(SnapshotStore(tmp_path))
+    agent = one_document_agent(provider)
+    case = {"id": "c1", "symptoms": "memory limit exceeded", "relevant": ["k8s:memory"]}
+
+    result = run_case(agent, case)
+    summary = summarise([result], {"hit_at_5": 1.0, "mrr": 1.0, "queries": 1})
+
+    assert provider.misses
+    assert result.degraded is True
+    assert result.parsed is True
+    assert result.retrieved_expected is True
+    assert summary["degraded"] == 1
+    assert any(failure.startswith("degraded:") for failure in check(summary))
 
 
 def test_the_report_names_the_retrieval_it_scored() -> None:
