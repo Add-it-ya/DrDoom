@@ -9,8 +9,10 @@ and the two drifted.
 Three properties this layer is responsible for.
 
 **Approving requires authentication**, and the authenticated name is what the audit log
-records. Reading is open; deciding is not. The keys are read at startup, after the local
-.env has been loaded, so a key written there is one the service accepts.
+records. So does reading what the service knows: an incident, its audit trail, the list
+of incidents and the metrics. Open are only health, the demo window, and starting an
+investigation, whose caller already has the window. The keys are read at startup, after
+the local .env has been loaded, so a key written there is one the service accepts.
 
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
 returns the same outcome rather than a 404 or a second execution.
@@ -22,7 +24,8 @@ model call, and never reaches the approval gate as a phantom incident.
 
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
-a sanitiser. See the note in ``web/index.html``.
+a sanitiser. See the note in ``web/index.html``. Every response carries a Content Security
+Policy as the layer behind the sanitiser (``api/headers.py``).
 
 **Health describes the parts, not the process.** ``/health`` says whether a model is
 configured, whether anyone can approve, and whether the investigation store answers. A
@@ -51,6 +54,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
 from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
+from drdoom.api.headers import SecurityHeaders
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings, load_env_file
 from drdoom.llm.factory import UnavailableProvider
@@ -270,6 +274,9 @@ def get_service() -> Service:
 
 CurrentService = Annotated[Service, Depends(get_service)]
 Approver = Annotated[Principal, Depends(require_principal)]
+# Reading takes the same credential as deciding, but the reader's name is not recorded, so
+# the check is declared on the route rather than taken as an argument.
+KEY_REQUIRED = [Depends(require_principal)]
 
 
 def _window(payload: MetricWindow, current: Service) -> np.ndarray:
@@ -344,6 +351,8 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         summary="Autonomous incident response with a human approval gate",
         lifespan=lifespan,
     )
+    docs = (app.docs_url, app.redoc_url, app.swagger_ui_oauth2_redirect_url)
+    app.add_middleware(SecurityHeaders, exempt=frozenset(path for path in docs if path))
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -355,9 +364,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         code = status.HTTP_503_SERVICE_UNAVAILABLE if verdict == "unavailable" else 200
         return JSONResponse(status_code=code, content={"status": verdict, "components": components})
 
-    @app.get("/metrics")
+    @app.get("/metrics", dependencies=KEY_REQUIRED)
     def metrics(current: CurrentService) -> dict[str, Any]:
-        """Traffic, where time goes, and whether the decision record is intact."""
+        """Traffic, where time goes, and whether the decision record is intact.
+
+        Requires a credential: request counts and the size of the audit log describe how
+        the service is used, which is nobody else's business.
+        """
         valid, reason = current.audit.verify()
         latencies = current.stage_latencies
         return {
@@ -424,17 +437,16 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             ),
         }
 
-    @app.get("/incidents", response_model=IncidentPage)
+    @app.get("/incidents", response_model=IncidentPage, dependencies=KEY_REQUIRED)
     def list_incidents(
         current: CurrentService,
-        principal: Approver,
         limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 20,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> IncidentPage:
         """Recent investigations, newest first. Requires a credential.
 
         A list of every incident is a map of what has gone wrong and what was done about
-        it, so it is not public even though a single incident still is.
+        it.
         """
         investigations, total = current.investigator.recent(limit, offset)
         return IncidentPage(
@@ -444,8 +456,15 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             offset=offset,
         )
 
-    @app.get("/incidents/{incident_id}", response_model=InvestigationView)
+    @app.get(
+        "/incidents/{incident_id}", response_model=InvestigationView, dependencies=KEY_REQUIRED
+    )
     def read_incident(incident_id: str, current: CurrentService) -> InvestigationView:
+        """One investigation as it stands. Requires a credential.
+
+        An incident holds the diagnosis, the command approval would run and the plan's
+        hash, and its identifier is twelve hex characters, not a secret.
+        """
         with incident_context(incident_id):
             outcome = current.investigator.status(incident_id)
         if outcome.status == "no_incident" and not outcome.state:
@@ -487,8 +506,9 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         logger.info("incident %s decided by %s", incident_id, principal.name)
         return InvestigationView.of(outcome)
 
-    @app.get("/incidents/{incident_id}/audit")
+    @app.get("/incidents/{incident_id}/audit", dependencies=KEY_REQUIRED)
     def incident_audit(incident_id: str, current: CurrentService) -> dict:
+        """Who decided what for one incident. Requires a credential."""
         entries = current.audit.for_incident(incident_id)
         valid, reason = current.audit.verify()
         return {

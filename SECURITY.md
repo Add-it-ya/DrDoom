@@ -72,8 +72,24 @@ asserts every `innerHTML` assignment in the page has `DOMPurify.sanitize` on its
 side (`tests/test_api.py`), and the behaviour was checked in a real browser against
 `<script>`, `<img onerror>` and a `javascript:` link — all three stripped, nothing executed.
 
-**Residual risk.** DOMPurify is a dependency loaded from a CDN with no Subresource
-Integrity hash. A compromised CDN would defeat this. Adding SRI is listed below.
+DOMPurify and marked load from a CDN pinned by Subresource Integrity: the page names the
+sha512 of each file, and a browser refuses a script whose bytes differ. Without the
+sanitiser the postmortem is not rendered at all, so a tampered CDN makes the page fail
+closed rather than open (`web/index.html`; a test requires a hash on every external
+script).
+
+Behind the sanitiser, every response carries a Content Security Policy
+(`src/drdoom/api/headers.py`). The page's script and styles are files of their own, so the
+policy allows no inline script or style at all, script only from this origin and the two
+pinned CDN files, connections only to this origin, and images only from this origin,
+which closes the usual way injected markup carries data out. The page cannot be framed,
+so another site cannot overlay the approve button. Tests check that the page needs
+nothing inline and that the policy names exactly the scripts the page loads.
+
+**Residual risk.** The policy does not cover FastAPI's interactive docs at `/docs` and
+`/redoc`, which load their own scripts from another CDN and run inline code; they render
+the api's schema, not model output. The CDN scripts are allowed by URL and pinned by hash,
+so they are only as trustworthy as the versions chosen.
 
 ### 3. Approving an action nobody approved
 
@@ -82,9 +98,12 @@ predecessor project to this one had no authentication on its approval endpoint a
 
 **What is done.** `/incidents/{id}/approve` requires a valid `X-API-Key`, compared in
 constant time, resolving to a **named principal** recorded in the audit log
-(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. The incident list,
-`GET /incidents`, requires a key too, because it is a map of every incident and what was
-done about it. Reading a single incident, its audit trail and `/metrics` is still open.
+(`src/drdoom/api/auth.py`). An unset key ring accepts nobody. Reading requires a key too:
+the incident list (a map of every incident and what was done about it), a single incident
+(its diagnosis and the command approval would run, behind an identifier of twelve hex
+characters), its audit trail and `/metrics`. Open are only `/health`, the demo window and
+starting an investigation, whose caller already holds the window it sent
+(`src/drdoom/api/main.py`).
 
 **Residual risk.** Static API keys have no expiry and no revocation beyond editing the
 configuration. For anything beyond a demonstration, short-lived tokens tied to an identity
@@ -146,17 +165,32 @@ reported.
 quota drained by anyone who finds it. This is the largest open issue and is called out
 first below.
 
+### 8. Code hidden in a data file
+
+**Attack.** Replace a saved model or scaler with a file that runs code when it is loaded.
+Python's pickle, which `torch.load` and `np.load` fall back on when allowed to, executes
+whatever the file tells it to.
+
+**What is done.** Nothing this project loads is unpickled. Detector checkpoints load with
+`torch.load(..., weights_only=True)`, the classifier from XGBoost's JSON format, and
+scalers with `np.load(..., allow_pickle=False)`: their feature names are saved as text,
+and a scaler in the earlier pickled format is refused with the way to convert it
+(`src/drdoom/data/windows.py`). The service fits its scaler at startup rather than loading
+one.
+
+**Residual risk.** `Scaler.upgrade` unpickles by design, once and only when called, to
+convert a file this project wrote in the earlier format. It must not be pointed at a file
+from anywhere else.
+
 ---
 
 ## Known gaps, in the order they should be closed
 
 1. **Rate limiting on `/investigate`.** Currently unauthenticated and unthrottled.
-2. **Subresource Integrity on the CDN scripts.** DOMPurify and marked load without a hash.
-3. **Short-lived credentials.** Static API keys have no expiry or revocation path.
-4. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
+2. **Short-lived credentials.** Static API keys have no expiry or revocation path.
+3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
    rewrite history undetected.
-5. **A Content Security Policy.** Defence in depth behind the sanitiser.
-6. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
+4. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 
 ---
