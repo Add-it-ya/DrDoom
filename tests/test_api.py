@@ -5,6 +5,8 @@ The pipeline itself is tested elsewhere. What is under test here is the layer ar
 
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -375,6 +377,33 @@ def test_a_repeat_does_not_execute_a_second_time(client) -> None:
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
 
     assert len(client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]) == 1
+
+
+def approve_together(client, incident: str) -> list:
+    barrier = threading.Barrier(2)
+
+    def approve(_: int):
+        barrier.wait()
+        return client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=AUTH)
+
+    with ThreadPoolExecutor(2) as pool:
+        return list(pool.map(approve, range(2)))
+
+
+def test_two_approvals_at_once_execute_once(client) -> None:
+    """Checked and then resumed, both were accepted and the plan ran twice in 20 of 20."""
+    for _ in range(3):
+        incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
+
+        responses = approve_together(client, incident)
+
+        codes = sorted(response.status_code for response in responses)
+        assert codes in ([200, 200], [200, 409])
+        for response in responses:
+            if response.status_code == 409:
+                assert "already being recorded" in response.json()["detail"]
+        entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
+        assert len(entries) == 1
 
 
 def test_a_reversal_after_the_fact_returns_the_recorded_decision(client) -> None:

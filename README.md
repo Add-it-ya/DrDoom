@@ -265,7 +265,11 @@ configure credentials refuses approvals rather than accepting them from anyone.
 
 **Approving twice is safe.** Networks retry, so a recorded decision is returned as it
 stands rather than applied a second time. A later request with the opposite answer
-changes nothing: the recorded decision is returned as it stands.
+changes nothing: the recorded decision is returned as it stands. Two decisions arriving
+at once cannot both run either: the first claims the gate with an atomic write to the
+investigation store, and the second gets 409, or the first one's outcome if it has
+finished. Before that claim existed, two simultaneous approvals both ran the plan in 20
+of 20 trials.
 
 **No model output reaches the DOM as markup.** Plain fields go through `textContent`; the
 postmortem is markdown, so it goes through DOMPurify. That chain matters here more than

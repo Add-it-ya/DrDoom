@@ -105,6 +105,12 @@ characters), its audit trail and `/metrics`. Open are only `/health`, the demo w
 starting an investigation, whose caller already holds the window it sent
 (`src/drdoom/api/main.py`).
 
+One approval runs one plan. Checking that an incident waits at the gate and resuming it
+were two steps, and two approvals sent together both passed the check and both ran the
+plan. The right to answer a gate is now claimed first with an insert the investigation
+store performs atomically, so a second decision, from another thread or another process,
+is refused with 409 (`src/drdoom/agents/graph.py`).
+
 **Residual risk.** Static API keys have no expiry and no revocation beyond editing the
 configuration. For anything beyond a demonstration, short-lived tokens tied to an identity
 provider would replace them.

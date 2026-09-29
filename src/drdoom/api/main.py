@@ -15,7 +15,9 @@ investigation, whose caller already has the window. The keys are read at startup
 the local .env has been loaded, so a key written there is one the service accepts.
 
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
-returns the same outcome rather than a 404 or a second execution.
+returns the same outcome rather than a 404 or a second execution. Two decisions arriving
+together cannot both run: the first claims the gate, and the second gets 409, or the
+first one's outcome if it has already finished.
 
 **A window is checked before anything is spent on it.** Values must be finite and the
 shape must be the one the detector's threshold was calibrated for, or the request is
@@ -52,7 +54,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
+from drdoom.agents.graph import STOPPED_DETAIL, DecisionTakenError, Investigation, Investigator
 from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
 from drdoom.api.headers import SecurityHeaders
 from drdoom.audit import AuditLog
@@ -501,6 +503,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             outcome = current.investigator.resume(
                 incident_id, approved=decision.approved, principal=principal.name
             )
+        except DecisionTakenError as error:
+            # Another request is answering this gate. If it has finished, its outcome is
+            # the answer to this one as well; if not, this one arrived second.
+            settled = current.investigator.status(incident_id)
+            if settled.status in TERMINAL:
+                return InvestigationView.of(settled)
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
         except Exception as error:
             raise _stopped(incident_id, error) from error
         logger.info("incident %s decided by %s", incident_id, principal.name)
