@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -434,6 +435,63 @@ def test_a_resume_that_fails_before_the_gate_can_be_tried_again(tmp_path, monkey
         outcome = investigator.resume("incident", approved=True, principal="aditya")
 
     assert outcome.status == "complete"
+
+
+# --- retention ---------------------------------------------------------------------
+
+A_MONTH_ON = timedelta(days=31)
+
+
+def test_old_finished_investigations_are_pruned_and_the_audit_log_is_kept(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "decided")
+        investigator.resume("decided", approved=True, principal="aditya")
+        investigator.start(calm_window(), "all quiet", "calm")
+        investigator.start(disturbed_window(), "latency climbing", "waiting")
+
+        removed = investigator.prune(timedelta(days=30), now=datetime.now(UTC) + A_MONTH_ON)
+
+        assert removed == 2
+        assert investigator.status("decided").state == {}
+        assert investigator.status("calm").state == {}
+        assert investigator.recent(10)[1] == 1
+
+    assert len(AuditLog(audit_path).entries()) == 1
+
+
+def test_an_incident_awaiting_a_decision_is_kept_however_old(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "waiting")
+
+        investigator.prune(timedelta(days=30), now=datetime.now(UTC) + timedelta(days=3650))
+
+        assert investigator.status("waiting").status == "awaiting_approval"
+        assert investigator.resume("waiting", approved=True).status == "complete"
+
+
+def test_recent_investigations_are_not_pruned(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(calm_window(), "all quiet", "calm")
+
+        assert investigator.prune(timedelta(days=30)) == 0
+        assert investigator.status("calm").status == "no_incident"
+
+
+def test_pruning_removes_the_decision_claim_with_the_incident(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "decided")
+        investigator.resume("decided", approved=True)
+
+        investigator.prune(timedelta(days=30), now=datetime.now(UTC) + A_MONTH_ON)
+
+        with checkpointer.cursor(transaction=False) as cursor:
+            claims = cursor.execute("SELECT COUNT(*) FROM decision_claims").fetchone()[0]
+        assert claims == 0
 
 
 # --- the gate inside the pipeline ---------------------------------------------------

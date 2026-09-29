@@ -226,6 +226,11 @@ makes this a graph rather than four function calls in sequence. The test that pr
 starts an investigation in one interpreter, exits, and finishes it in a second one that
 shares nothing but the database file.
 
+Every step of every investigation is checkpointed, about 57 KiB each. At start-up the
+service deletes finished investigations older than `DRDOOM_RETENTION_DAYS` (30 by default;
+0 keeps everything). An incident still waiting for a decision is never deleted, and the
+audit log, the record of what was decided, is never pruned.
+
 ```
 triage ─┬─ no incident ─────────────────────────────► end
         └─ incident ─► diagnose ─► remediate ─► assess_risk ─► approval ─► report ─► end
@@ -355,8 +360,8 @@ investigations never interleave into an unreadable stream.
  "incident":"inc-demo-01","message":"stage complete","stage":"triage","duration_ms":0.4}
 ```
 
-Every stage is timed, and `/metrics` reports p50/p95 per stage alongside request counts and
-whether the audit chain still verifies — because "which stage was slow" is the first
+Every stage is timed, and `/metrics` reports p50/p95 per stage over its last 1,000 runs,
+alongside request counts and whether the audit chain still verifies — because "which stage was slow" is the first
 question asked about a slow investigation, and it is unanswerable from a log that only
 records what happened.
 

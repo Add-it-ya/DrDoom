@@ -42,6 +42,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -628,6 +629,35 @@ class Investigator:
                 (limit, offset),
             ).fetchall()
         return [self.status(thread_id) for (thread_id,) in rows], int(total)
+
+    def prune(self, older_than: timedelta, now: datetime | None = None) -> int:
+        """Delete stored investigations that finished longer ago than ``older_than``.
+
+        Every step of every investigation is kept, about 57 KiB of checkpoints each, and
+        nothing removed them. Only finished ones go: an incident waiting at the gate is
+        kept however old, because a decision is still owed on it. The audit log is not
+        touched; it is the record of what was decided and outlives the working state.
+        """
+        cutoff = (now or datetime.now(UTC)) - older_than
+        with self.checkpointer.cursor(transaction=False) as cursor:
+            threads = [
+                thread_id
+                for (thread_id,) in cursor.execute(
+                    "SELECT DISTINCT thread_id FROM checkpoints WHERE checkpoint_ns = ''"
+                ).fetchall()
+            ]
+        removed = 0
+        for thread_id in threads:
+            investigation = self.status(thread_id)
+            if investigation.status == "awaiting_approval" or not investigation.updated_at:
+                continue
+            if datetime.fromisoformat(investigation.updated_at) >= cutoff:
+                continue
+            self.checkpointer.delete_thread(thread_id)
+            with self.checkpointer.cursor() as cursor:
+                cursor.execute("DELETE FROM decision_claims WHERE thread_id = ?", (thread_id,))
+            removed += 1
+        return removed
 
 
 def _forwarding(collector: Timings, counters: Counters):
