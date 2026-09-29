@@ -5,6 +5,8 @@ the log can tell you if it has been edited since.
 """
 
 import json
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from multiprocessing import get_context
 from typing import get_args
 
 import pytest
@@ -20,6 +22,7 @@ from drdoom.executor import (
     action_spec,
     plan_hash,
 )
+from tests._audit_worker import append_many
 
 
 def make_plan(
@@ -283,6 +286,30 @@ def test_entries_can_be_read_back_per_incident(tmp_path) -> None:
     record(log, incident="i1")
 
     assert len(log.for_incident("i1")) == 2
+
+
+def test_parallel_appends_from_threads_keep_every_entry_and_the_chain(tmp_path) -> None:
+    """Unlocked, eight threads kept 199 of 200 entries and broke the chain at entry 1."""
+    path = tmp_path / "audit.jsonl"
+
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(append_many, [str(path)] * 8, range(8), [25] * 8))
+
+    log = AuditLog(path)
+    assert len({entry.incident_id for entry in log.entries()}) == 200
+    assert log.verify() == (True, "chain intact")
+
+
+def test_appends_from_separate_processes_keep_every_entry_and_the_chain(tmp_path) -> None:
+    """The lock is on a file, so it holds between processes too; unlocked, four kept 172."""
+    path = tmp_path / "audit.jsonl"
+
+    with ProcessPoolExecutor(4, mp_context=get_context("spawn")) as pool:
+        list(pool.map(append_many, [str(path)] * 4, range(4), [25] * 4))
+
+    log = AuditLog(path)
+    assert len({entry.incident_id for entry in log.entries()}) == 100
+    assert log.verify() == (True, "chain intact")
 
 
 def test_the_entry_hash_covers_every_field_but_itself(tmp_path) -> None:
