@@ -1,8 +1,0 @@
-{
-  "note": "diagnosis eval",
-  "provider": "groq",
-  "model": "openai/gpt-oss-120b",
-  "input_tokens": 1354,
-  "output_tokens": 374,
-  "text": "{\"summary\":\"The on\u2011call team is being paged repeatedly for transient conditions that resolve themselves, likely because alerts are firing on lower\u2011level metrics or brief spikes rather than on user\u2011visible latency or error rates, as warned in the alerting guidance.\",\"likely_cause\":\"Mis\u2011configured alerts that trigger on transient traffic spikes or low\u2011level component latency instead of user\u2011visible impact\",\"confidence\":\"medium\",\"next_action\":\"Review and tighten alerting policies: only page on latency or errors that affect user experience, raise thresholds or add aggregation windows for high\u2011traffic spikes, and consider adding alert suppression or deduplication for short\u2011lived anomalies.\"}"
-}

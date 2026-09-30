@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1486,
+  "output_tokens": 475,
+  "text": "{\"summary\":\"On\u2011call is being paged repeatedly for transient conditions that resolve themselves\",\"likely_cause\":\"Alerting rules are triggering on short\u2011lived traffic spikes even though overall user\u2011visible latency and error rates remain normal, causing unnecessary pages\",\"confidence\":\"medium\",\"next_action\":\"Review and tighten alert thresholds per the Alerting guidance (page only on user\u2011visible latency or error spikes), add rate\u2011limiting or automatic suppression as described in the Automatic actions section, and consider aggregating traffic\u2011type alerts to reduce noise\"}"
+}

@@ -55,9 +55,20 @@ hostile or not, reaches the corpus only when someone moves the pin and re-measur
 (`src/drdoom/rag/corpus.py`). The Server Machine Dataset is pinned and checked the same
 way (`src/drdoom/data/smd.py`).
 
+HTML is taken out of every page before it is split into passages
+(`src/drdoom/rag/ingest.py`). Scripts, styles and comments, which no reader of the
+rendered page sees, go with everything inside them; other tags leave their text; code
+fences are left as written, since a tag there is an example or a placeholder. Before this,
+a fifth of the passages carried markup, mostly tables, and two blog posts carried a
+third-party script tag into model prompts. Flagging "instruction-like" passages was
+considered and left out: a phrase match flagged 59 passages of this corpus, and the ones
+checked were ordinary prose ("You are almost there"), which would only teach a reader to
+ignore the flag.
+
 **Residual risk.** A convincing but wrong diagnosis is still possible, and the groundedness
-score in CI is a lexical proxy, not a truth check. The system reduces the *blast radius* of
-a manipulated model; it does not detect manipulation.
+score in CI is a lexical proxy, not a truth check. An instruction written as ordinary
+visible text survives the stripping and reaches the model like any other sentence. The
+system reduces the *blast radius* of a manipulated model; it does not detect manipulation.
 
 ### 2. Injection reaching the operator's browser as script
 

@@ -129,10 +129,15 @@ python -m drdoom.classify.train
 
 ### Retrieval
 
-430 documents of Kubernetes and Prometheus operational documentation, 5671 chunks, with
+430 documents of Kubernetes and Prometheus operational documentation, 5293 chunks, with
 no filter narrowing the search to a document the classifier already picked. Scored on 40
 hand-authored operational questions in [`evals/`](evals/retrieval_queries.json). Full
 ablation in [docs/retrieval-results.md](docs/retrieval-results.md).
+
+HTML is taken out of each page before it is chunked, since passages go straight into
+model prompts: scripts, styles and comments with their contents, other tags down to their
+text, code fences untouched. A fifth of the chunks had carried markup, mostly tables. The
+served configuration scores the same without it, and the corpus is 9% shorter.
 
 Both sources are pinned to one upstream commit each, the heads of their `main` branches
 when these results were measured, and every download is checked against a digest of the
@@ -142,13 +147,13 @@ had quietly stopped reproducing the scores published here.
 
 | Configuration | Hit@5 | Recall@5 | MRR |
 |---|---:|---:|---:|
-| BM25 only | 0.725 | 0.675 | 0.539 |
+| BM25 only | 0.750 | 0.700 | 0.538 |
 | Dense only (MiniLM) | 0.825 | 0.787 | 0.630 |
-| Hybrid (BM25 + MiniLM) | 0.850 | 0.812 | 0.617 |
+| Hybrid (BM25 + MiniLM) | 0.850 | 0.800 | 0.630 |
 | Hybrid + cross-encoder rerank | **0.875** | **0.838** | **0.699** |
 
 Here, unlike detection and classification, every component pays for itself. The reranker
-is the clearest case: it adds little to hit rate but moves MRR from 0.617 to 0.699, which
+is the clearest case: it adds little to hit rate but moves MRR from 0.630 to 0.699, which
 is what reranking is for — it does not find more, it orders better, and position decides
 what fits in the model's context.
 
@@ -307,8 +312,8 @@ sources* — the question worth asking of a machine-written diagnosis — not as
 |---|---:|---:|
 | retrieval hit@5 | 0.875 | 0.75 |
 | diagnosis retrieved the right document | 0.667 | 0.50 |
-| groundedness | 0.595 | 0.50 |
-| supported sentence fraction | 0.528 | 0.40 |
+| groundedness | 0.586 | 0.50 |
+| supported sentence fraction | 0.521 | 0.40 |
 | structured output parsed | 1.000 | 1.00 |
 
 Full report in [docs/eval-results.md](docs/eval-results.md). Floors sit *below* the
@@ -319,7 +324,12 @@ These scores are for the retrieval the service runs, cross-encoder reranking inc
 Serving the reranker moved the two retrieval rows from 0.850 and 0.600, and those rows
 depend on retrieval alone. The three rows scoring the written diagnosis come from one
 recording of a model that does not answer the same way twice, so a change in them
-between recordings is partly the model and not only the retrieval.
+between recordings is partly the model and not only the retrieval. Stripping HTML from the
+corpus changed the passages of two cases, which were recorded again: groundedness moved
+from 0.595 to 0.586, and a second recording of the same two requests gave 0.595, so that
+movement is the model's. One effect repeated in both recordings: with the pod termination
+page now ranked above the queuing page, the unhealthy-pods answer stopped naming readiness
+probes, and the share of answers with their expected terms fell from 0.800 to 0.733.
 
 The suite's most useful finding was about itself. An early version scored lexical
 retrieval alone and reported numbers the deployed system would never produce. Symptom
