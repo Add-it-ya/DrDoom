@@ -184,13 +184,13 @@ process's environment. A secrets manager would be the next step.
 
 **Attack.** Post large or repeated windows and make the service spend model tokens.
 
-**What is done.** Little, deliberately. `/investigate` is unauthenticated so the demo can be
-clicked. A window is refused with 422 before the graph starts unless every value is finite
-and its shape and metric order are the ones the detector's threshold was calibrated for, so
-a malformed payload costs no retrieval and no model call. Bodies are capped at 10,000
-values and symptoms at 2,000 characters, and a refusal does not echo the rejected input.
-Conditional routing means a calm window costs zero tokens, and per-incident token usage is
-reported.
+**What is done.** `/investigate` stays unauthenticated so the demo can be clicked, so the
+defences limit what a request can cost. A window is refused with 422 before the graph
+starts unless every value is finite and its shape and metric order are the ones the
+detector's threshold was calibrated for, so a malformed payload costs no retrieval and no
+model call. Bodies are capped at 10,000 values and symptoms at 2,000 characters, and a
+refusal does not echo the rejected input. Conditional routing means a calm window costs
+zero tokens, and per-incident token usage is reported.
 
 Starting investigations is rate limited (`src/drdoom/api/limits.py`). Each caller may start
 10 a minute, where a caller is its API key when it sends a valid one and otherwise its
