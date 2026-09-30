@@ -37,12 +37,12 @@ hit@5 from 0.725 to 0.850 and the diagnosis retrieval rate from 0.333 to 0.600.
 |---|---:|---:|
 | retrieval hit at 5 | 0.875 | 0.75 |
 | diagnosis retrieval hit | 0.667 | 0.50 |
-| groundedness | 0.595 | 0.50 |
-| supported fraction | 0.528 | 0.40 |
-| expected terms present | 0.800 | - |
+| groundedness | 0.586 | 0.50 |
+| supported fraction | 0.521 | 0.40 |
+| expected terms present | 0.733 | - |
 | parse success | 1.000 | 1.00 |
 
-15 diagnosis cases, 40 retrieval queries, 28699 tokens across the suite. 0 degraded; any degraded case fails the build.
+15 diagnosis cases, 40 retrieval queries, 28864 tokens across the suite. 0 degraded; any degraded case fails the build.
 Retrieval as served: hybrid (bm25 + MiniLM), reranked by ms-marco-MiniLM-L-6-v2, from a shortlist of 30.
 
 ## Per case
@@ -56,11 +56,11 @@ Retrieval as served: hybrid (bm25 + MiniLM), reranked by ms-marco-MiniLM-L-6-v2,
 | deploy-surge | yes | 0.551 | yes |
 | traffic-spike-scale | no | 0.546 | no |
 | traffic-spike-nodes | yes | 0.668 | no |
-| unhealthy-pods | no | 0.611 | yes |
+| unhealthy-pods | no | 0.547 | no |
 | dns-failures | yes | 0.759 | yes |
 | service-unreachable | yes | 0.606 | yes |
 | pods-not-starting | yes | 0.659 | yes |
 | node-maintenance | yes | 0.559 | yes |
 | eviction-storm | yes | 0.619 | yes |
-| noisy-alerts | yes | 0.458 | yes |
+| noisy-alerts | yes | 0.383 | yes |
 | latency-percentiles | no | 0.412 | no |

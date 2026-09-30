@@ -1,0 +1,8 @@
+{
+  "note": "diagnosis eval",
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "input_tokens": 1336,
+  "output_tokens": 378,
+  "text": "{\"summary\":\"Pods that have been stopped are still being considered in\u2011service and continue to receive traffic, leading to requests that never get a response.\",\"likely_cause\":\"The termination flow is not updating the EndpointSlice correctly \u2013 terminating pods remain marked as ready (or load balancers are still routing to them) so traffic is sent to pods that have stopped responding.\",\"confidence\":\"medium\",\"next_action\":\"Check the pod termination process: verify that pods enter the terminating state, that their EndpointSlice entries get the `ready:false` flag and the `serving` condition is updated. Ensure readiness gates or termination hooks are configured so the pod is removed from service before it stops responding. If needed, add or adjust a Pod Disruption Budget to control how many pods can be terminated simultaneously.\"}"
+}
