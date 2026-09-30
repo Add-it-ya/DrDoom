@@ -20,6 +20,7 @@ from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.api.auth import KeyRing
+from drdoom.api.limits import RateLimiter
 from drdoom.api.main import Service, create_app, set_service
 from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
@@ -369,6 +370,29 @@ def test_starting_an_investigation_stays_open(client) -> None:
     """The demo has to be clickable; the caller already holds the window it sent."""
     assert client.get("/demo/window").status_code == 200
     assert client.post("/investigate", json=window_payload()).status_code == 200
+
+
+def test_starting_too_many_investigations_is_refused_with_429(tmp_path) -> None:
+    """Open to anyone, each run costs thousands of model tokens."""
+    app = create_app(
+        service=build_service(tmp_path),
+        keyring=KeyRing({KEY: PRINCIPAL}),
+        limiter=RateLimiter(per_caller=2, total=100),
+    )
+    with TestClient(app) as local:
+        codes = [
+            local.post("/investigate", json=window_payload(False)).status_code for _ in range(3)
+        ]
+        streamed = local.post("/investigate/stream", json=window_payload(False))
+        keyed = local.post("/investigate", json=window_payload(False), headers=AUTH)
+        started = local.get("/incidents", headers=AUTH).json()["total"]
+    set_service(None)
+
+    assert codes == [200, 200, 429]
+    assert streamed.status_code == 429
+    assert int(streamed.headers["retry-after"]) >= 1
+    assert keyed.status_code == 200, "a caller with a key has its own allowance"
+    assert started == 3, "a refused request starts nothing"
 
 
 # --- idempotency -------------------------------------------------------------------

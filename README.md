@@ -390,9 +390,11 @@ suspended investigations survive a restart.
 The system reads documents it does not control, hands them to a model, shows the result to
 an engineer, and can act on that engineer's approval — a chain from untrusted input to
 privileged action. [SECURITY.md](SECURITY.md) sets out the threat model, what is done about
-each threat, and, more usefully, what is **not**: no rate limiting on `/investigate`, no
-Subresource Integrity on the CDN scripts, static API keys with no expiry, and an audit
-chain that is tamper-evident locally but not anchored anywhere an attacker could not reach.
+each threat, and, more usefully, what is **not**: API keys that can expire but remain
+static secrets, and an audit chain that is tamper-evident locally but not anchored
+anywhere an attacker could not reach. Starting investigations is rate limited, the
+dashboard's CDN scripts are pinned by hash, and every response carries a Content Security
+Policy.
 
 ### Model providers
 

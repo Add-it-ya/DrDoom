@@ -174,9 +174,18 @@ values and symptoms at 2,000 characters, and a refusal does not echo the rejecte
 Conditional routing means a calm window costs zero tokens, and per-incident token usage is
 reported.
 
-**Residual risk.** **There is no rate limiting.** A public deployment can have its provider
-quota drained by anyone who finds it. This is the largest open issue and is called out
-first below.
+Starting investigations is rate limited (`src/drdoom/api/limits.py`). Each caller may start
+10 a minute, where a caller is its API key when it sends a valid one and otherwise its
+network address, and all callers together 60 a minute, so that many addresses cannot add
+up to an unlimited allowance (`DRDOOM_INVESTIGATE_PER_MINUTE`,
+`DRDOOM_INVESTIGATE_PER_MINUTE_TOTAL`). Beyond that the answer is 429 with `Retry-After`,
+before any retrieval or model call. A refused request is not recorded, so the limiter
+tracks at most as many callers as it admitted in the last minute.
+
+**Residual risk.** The total still lets through 60 investigations a minute, a few hundred
+thousand tokens, which is a ceiling on spend rather than protection of it. Behind a proxy
+or NAT, callers without a key share one address and so one allowance. The limits live in
+process memory: each worker process keeps its own, and a restart resets them.
 
 ### 8. Code hidden in a data file
 
@@ -199,12 +208,11 @@ from anywhere else.
 
 ## Known gaps, in the order they should be closed
 
-1. **Rate limiting on `/investigate`.** Currently unauthenticated and unthrottled.
-2. **Short-lived credentials.** Keys can expire, but they are static secrets with no
+1. **Short-lived credentials.** Keys can expire, but they are static secrets with no
    revocation short of editing the configuration and restarting.
-3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
+2. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
    rewrite history undetected.
-4. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
+3. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 
 ---
