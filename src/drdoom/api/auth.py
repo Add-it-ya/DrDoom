@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import HTTPException, Security, status
@@ -40,14 +42,25 @@ class Principal:
 
 
 class KeyRing:
-    """The keys this deployment accepts, mapped to the names they authenticate as."""
+    """The keys this deployment accepts, mapped to the names they authenticate as.
 
-    def __init__(self, keys: dict[str, str] | None = None) -> None:
+    A key may carry an expiry date, after which it is refused like any wrong key. A static
+    key that never expires stays valid for as long as it sits in someone's shell history.
+    """
+
+    def __init__(
+        self, keys: dict[str, str] | None = None, expires: dict[str, datetime] | None = None
+    ) -> None:
         self.keys = dict(keys or {})
+        self.expires = dict(expires or {})
 
     @classmethod
     def from_environment(cls) -> KeyRing:
-        """Read ``name:key`` pairs from the environment, comma separated.
+        """Read ``name:key`` or ``name:key:YYYY-MM-DD`` entries from the environment.
+
+        Entries are comma separated. A date is when the key stops working, at the start of
+        that day in UTC. Something shaped like a date that is not one stops start-up
+        rather than quietly becoming part of the key.
 
         An empty key ring means no caller can approve anything. That is the correct
         default: a deployment that forgot to configure credentials should refuse
@@ -59,23 +72,55 @@ class KeyRing:
             return cls({})
 
         keys: dict[str, str] = {}
-        for pair in raw.split(","):
-            name, _, key = pair.partition(":")
-            if name.strip() and key.strip():
-                keys[key.strip()] = name.strip()
-        logger.info("loaded %d approval credential(s)", len(keys))
-        return cls(keys)
+        expires: dict[str, datetime] = {}
+        for entry in raw.split(","):
+            name, _, rest = entry.partition(":")
+            name, rest = name.strip(), rest.strip()
+            key, expiry = rest, None
+            head, _, tail = rest.rpartition(":")
+            if DATE.fullmatch(tail.strip()):
+                key, expiry = head.strip(), _parse_expiry(tail.strip(), name)
+            if name and key:
+                keys[key] = name
+                if expiry is not None:
+                    expires[key] = expiry
+        ring = cls(keys, expires)
+        now = datetime.now(UTC)
+        for key, when in expires.items():
+            state = "expired" if when <= now else "expires"
+            logger.warning("the key for %s %s on %s", keys[key], state, when.date())
+        logger.info("loaded %d approval credential(s), %d usable now", len(keys), ring.usable(now))
+        return ring
 
-    def resolve(self, presented: str | None) -> Principal | None:
+    def resolve(self, presented: str | None, now: datetime | None = None) -> Principal | None:
         if not presented:
             return None
         for key, name in self.keys.items():
             if secrets.compare_digest(key, presented):
+                expiry = self.expires.get(key)
+                if expiry is not None and expiry <= (now or datetime.now(UTC)):
+                    logger.warning("refused the expired key for %s", name)
+                    return None
                 return Principal(name=name)
         return None
 
+    def usable(self, now: datetime | None = None) -> int:
+        """How many keys would be accepted at ``now``."""
+        moment = now or datetime.now(UTC)
+        return sum(1 for key in self.keys if key not in self.expires or self.expires[key] > moment)
+
     def __len__(self) -> int:
         return len(self.keys)
+
+
+DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _parse_expiry(text: str, name: str) -> datetime:
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as error:
+        raise ValueError(f"the key for {name} has an expiry that is not a date: {text}") from error
 
 
 _keyring = KeyRing()

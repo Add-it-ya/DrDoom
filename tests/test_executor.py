@@ -13,7 +13,8 @@ import pytest
 from pydantic import ValidationError
 
 from drdoom.agents.schemas import ActionKind, RemediationPlan
-from drdoom.audit import GENESIS, AuditLog, compute_entry_hash
+from drdoom.audit import GENESIS, AuditLog, compute_entry_hash, parse_anchor
+from drdoom.audit import main as audit_main
 from drdoom.executor import (
     CATALOGUE,
     ApprovalToken,
@@ -310,6 +311,100 @@ def test_appends_from_separate_processes_keep_every_entry_and_the_chain(tmp_path
     log = AuditLog(path)
     assert len({entry.incident_id for entry in log.entries()}) == 100
     assert log.verify() == (True, "chain intact")
+
+
+def rewrite_from(path, position: int, **changes) -> None:
+    """What anyone who can write the file can do: edit an entry and re-hash all after it."""
+    lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    previous = lines[position - 1]["entry_hash"] if position else GENESIS
+    for index in range(position, len(lines)):
+        entry = lines[index]
+        if index == position:
+            entry.update(changes)
+        entry.pop("entry_hash")
+        entry["previous_hash"] = previous
+        entry["entry_hash"] = previous = compute_entry_hash(entry)
+    rewritten = [json.dumps(entry, sort_keys=True) for entry in lines]
+    path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+
+
+def test_a_consistent_rewrite_passes_the_chain_but_not_an_anchor(tmp_path) -> None:
+    """The chain alone is tamper-evident only against a careless tamperer."""
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    for incident in ("i1", "i2", "i3"):
+        record(log, incident=incident)
+    anchor = log.head()
+
+    rewrite_from(path, 0, principal="someone-else")
+
+    assert log.entries()[0].principal == "someone-else"
+    assert log.verify() == (True, "chain intact")
+    valid, reason = log.verify(anchor)
+    assert valid is False
+    assert "no longer matches the anchor" in reason
+
+
+def test_a_truncated_log_fails_its_anchor(tmp_path) -> None:
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    for incident in ("i1", "i2", "i3"):
+        record(log, incident=incident)
+    anchor = log.head()
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
+
+    assert log.verify()[0] is True
+    assert log.verify(anchor) == (False, "the log has 2 entries; the anchor recorded 3")
+
+
+def test_an_anchor_still_holds_after_later_appends(tmp_path) -> None:
+    log = AuditLog(tmp_path / "audit.jsonl")
+    record(log, incident="i1")
+    anchor = log.head()
+
+    record(log, incident="i2")
+
+    assert log.verify(anchor) == (True, "chain intact")
+    assert log.head().startswith("2:")
+
+
+def test_the_head_of_an_empty_log_is_the_genesis(tmp_path) -> None:
+    log = AuditLog(tmp_path / "audit.jsonl")
+
+    assert log.head() == f"0:{GENESIS}"
+    assert log.verify(log.head())[0] is True
+
+
+def test_a_malformed_anchor_is_refused() -> None:
+    with pytest.raises(ValueError, match="count:sha256"):
+        parse_anchor("3:not-a-hash")
+
+
+def test_each_append_logs_the_new_head(tmp_path, caplog) -> None:
+    """The log line is the copy that can live where the audit file's writer cannot reach."""
+    log = AuditLog(tmp_path / "audit.jsonl")
+
+    with caplog.at_level("INFO", logger="drdoom.audit"):
+        record(log)
+
+    assert f"chain head {log.head()}" in caplog.text
+
+
+def test_the_command_line_checks_a_log_against_an_anchor(tmp_path, capsys) -> None:
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    record(log, incident="i1")
+    record(log, incident="i2")
+    anchor = log.head()
+
+    before = audit_main(["--path", str(path), "--anchor", anchor])
+    rewrite_from(path, 1, decision="rejected_by_human")
+    after = audit_main(["--path", str(path), "--anchor", anchor])
+
+    assert (before, after) == (0, 1)
+    assert "no longer matches" in capsys.readouterr().out
 
 
 def test_the_entry_hash_covers_every_field_but_itself(tmp_path) -> None:

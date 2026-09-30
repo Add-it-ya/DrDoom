@@ -111,9 +111,14 @@ plan. The right to answer a gate is now claimed first with an insert the investi
 store performs atomically, so a second decision, from another thread or another process,
 is refused with 409 (`src/drdoom/agents/graph.py`).
 
-**Residual risk.** Static API keys have no expiry and no revocation beyond editing the
-configuration. For anything beyond a demonstration, short-lived tokens tied to an identity
-provider would replace them.
+A key can carry an expiry date (`name:key:YYYY-MM-DD`), from the start of which it is
+refused like a wrong key; start-up logs every key's expiry, and `/health` counts only keys
+that still work (`src/drdoom/api/auth.py`).
+
+**Residual risk.** Keys are still static secrets: an expiry has to be chosen by whoever
+writes the configuration, and revoking a key early means editing it and restarting. For
+anything beyond a demonstration, short-lived tokens tied to an identity provider would
+replace them.
 
 ### 4. Substituting the plan after approval
 
@@ -140,11 +145,18 @@ of the entry before it. Editing any earlier line breaks the chain from that poin
 recorded at once, from threads or from separate processes, can neither chain to the same
 entry nor overwrite each other.
 
-**Residual risk.** A hash chain in a local file is **tamper-evident, not tamper-proof**.
-Anyone who can write the file can rewrite the whole chain from the point they altered.
-Detecting that requires the head hash to be anchored somewhere the attacker does not
-control — a second host, an append-only log service, or a periodic external witness. That
-is not implemented.
+A hash chain in a local file is only **tamper-evident, not tamper-proof**: anyone who can
+write the file can edit an entry and recompute every hash after it, and the rewritten file
+verifies (a test does exactly that). So the chain's head, `count:sha256`, is published
+where a copy can be kept: in the service log on every append and at every start, and in
+`/metrics`. `python -m drdoom.audit --anchor <count:sha256>` then checks that the chain
+still passes through a head recorded earlier, which catches the consistent rewrite and a
+truncation alike.
+
+**Residual risk.** An anchor protects only as well as the place it is kept. The service
+publishes the head; keeping it where the audit file's writer cannot reach, by shipping logs
+to another host or scraping `/metrics` into an append-only store, is up to the deployment,
+and nothing here checks against an anchor automatically.
 
 ### 6. Credential exposure
 
@@ -169,9 +181,18 @@ values and symptoms at 2,000 characters, and a refusal does not echo the rejecte
 Conditional routing means a calm window costs zero tokens, and per-incident token usage is
 reported.
 
-**Residual risk.** **There is no rate limiting.** A public deployment can have its provider
-quota drained by anyone who finds it. This is the largest open issue and is called out
-first below.
+Starting investigations is rate limited (`src/drdoom/api/limits.py`). Each caller may start
+10 a minute, where a caller is its API key when it sends a valid one and otherwise its
+network address, and all callers together 60 a minute, so that many addresses cannot add
+up to an unlimited allowance (`DRDOOM_INVESTIGATE_PER_MINUTE`,
+`DRDOOM_INVESTIGATE_PER_MINUTE_TOTAL`). Beyond that the answer is 429 with `Retry-After`,
+before any retrieval or model call. A refused request is not recorded, so the limiter
+tracks at most as many callers as it admitted in the last minute.
+
+**Residual risk.** The total still lets through 60 investigations a minute, a few hundred
+thousand tokens, which is a ceiling on spend rather than protection of it. Behind a proxy
+or NAT, callers without a key share one address and so one allowance. The limits live in
+process memory: each worker process keeps its own, and a restart resets them.
 
 ### 8. Code hidden in a data file
 
@@ -194,11 +215,12 @@ from anywhere else.
 
 ## Known gaps, in the order they should be closed
 
-1. **Rate limiting on `/investigate`.** Currently unauthenticated and unthrottled.
-2. **Short-lived credentials.** Static API keys have no expiry or revocation path.
-3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
-   rewrite history undetected.
-4. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
+1. **Short-lived credentials.** Keys can expire, but they are static secrets with no
+   revocation short of editing the configuration and restarting.
+2. **Keeping the audit chain's head off the host.** The head is published in the log and
+   `/metrics`, but storing it where the audit file's writer cannot reach is left to the
+   deployment.
+3. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 
 ---

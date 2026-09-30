@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Finished investigations older than this are deleted from the store at start-up;
     # 0 keeps them all. Incidents awaiting a decision and the audit log are never pruned.
     retention_days: int = Field(default=30, ge=0)
+    # Investigations one caller may start per minute, and all callers together; 0 lifts
+    # a limit. A caller is its API key when it sends a valid one, else its address.
+    investigate_per_minute: int = Field(default=10, ge=0)
+    investigate_per_minute_total: int = Field(default=60, ge=0)
 
     @computed_field
     @property

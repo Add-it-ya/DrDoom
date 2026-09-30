@@ -181,6 +181,10 @@ async function investigate(anomalous) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (stream.status === 429) {
+      const wait = stream.headers.get("Retry-After") || "a few";
+      throw new Error("too many investigations started; try again in " + wait + " s");
+    }
     if (!stream.ok) throw new Error("investigate failed: " + stream.status);
 
     const reader = stream.body.getReader();

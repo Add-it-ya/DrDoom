@@ -55,8 +55,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from drdoom.agents.graph import STOPPED_DETAIL, DecisionTakenError, Investigation, Investigator
-from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
+from drdoom.api.auth import (
+    KeyRing,
+    PresentedKey,
+    Principal,
+    configure,
+    current_keyring,
+    require_principal,
+)
 from drdoom.api.headers import SecurityHeaders
+from drdoom.api.limits import RateLimiter
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings, load_env_file
 from drdoom.llm.factory import UnavailableProvider
@@ -223,7 +231,7 @@ class Service:
         reviewer = self.investigator.risk.provider
         model_ready = not isinstance(provider, UnavailableProvider)
         reviewer_ready = not isinstance(reviewer, UnavailableProvider)
-        approvals_ready = len(current_keyring()) > 0
+        approvals_ready = current_keyring().usable() > 0
         try:
             if self.connection is not None:
                 self.connection.execute("select 1").fetchone()
@@ -282,6 +290,31 @@ Approver = Annotated[Principal, Depends(require_principal)]
 KEY_REQUIRED = [Depends(require_principal)]
 
 
+def limit_investigations(request: Request, presented: PresentedKey) -> None:
+    """Refuse with 429 once a caller, or everyone together, has started too many.
+
+    A caller with a valid key is counted under its name, so a proxy in front of several
+    operators does not make them share one address's allowance.
+    """
+    limiter: RateLimiter | None = request.app.state.limiter
+    if limiter is None:
+        return
+    principal = current_keyring().resolve(presented)
+    address = request.client.host if request.client else "unknown"
+    caller = f"key:{principal.name}" if principal else f"address:{address}"
+    wait = limiter.admit(caller)
+    if wait is not None:
+        logger.warning("refused an investigation from %s: rate limit", caller)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many investigations started; try again later",
+            headers={"Retry-After": str(max(1, math.ceil(wait)))},
+        )
+
+
+RATE_LIMITED = [Depends(limit_investigations)]
+
+
 def _window(payload: MetricWindow, current: Service) -> np.ndarray:
     """The payload as an array the detector can score, or a 422 saying why not.
 
@@ -324,8 +357,15 @@ def _sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
 # --- routes ------------------------------------------------------------------------
 
 
-def create_app(service: Service | None = None, keyring: KeyRing | None = None) -> FastAPI:
-    """Build the application. Passing a service skips startup assembly, which tests use."""
+def create_app(
+    service: Service | None = None,
+    keyring: KeyRing | None = None,
+    limiter: RateLimiter | None = None,
+) -> FastAPI:
+    """Build the application. Passing a service skips startup assembly, which tests use.
+
+    Without a limiter, one is built from the settings; a limit of zero lifts it.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -354,6 +394,10 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         summary="Autonomous incident response with a human approval gate",
         lifespan=lifespan,
     )
+    settings = get_settings()
+    app.state.limiter = limiter or RateLimiter(
+        settings.investigate_per_minute, settings.investigate_per_minute_total
+    )
     docs = (app.docs_url, app.redoc_url, app.swagger_ui_oauth2_redirect_url)
     app.add_middleware(SecurityHeaders, exempt=frozenset(path for path in docs if path))
 
@@ -381,11 +425,13 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             "requests": snapshot["events"],
             "stages": snapshot["stages"],
             "audit_entries": len(current.audit.entries()),
+            # Worth recording elsewhere: `python -m drdoom.audit --anchor` checks against it.
+            "audit_head": current.audit.head(),
             "audit_chain_intact": valid,
             "audit_chain_detail": reason,
         }
 
-    @app.post("/investigate", response_model=InvestigationView)
+    @app.post("/investigate", response_model=InvestigationView, dependencies=RATE_LIMITED)
     def investigate(payload: MetricWindow, current: CurrentService) -> InvestigationView:
         """Start an investigation and return where it stopped."""
         current.count("investigate")
@@ -400,7 +446,7 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         logger.info("incident %s finished in state %s", incident_id, outcome.status)
         return InvestigationView.of(outcome)
 
-    @app.post("/investigate/stream")
+    @app.post("/investigate/stream", dependencies=RATE_LIMITED)
     def investigate_stream(payload: MetricWindow, current: CurrentService) -> StreamingResponse:
         """The same run, delivered a stage at a time."""
         current.count("investigate_stream")

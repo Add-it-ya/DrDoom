@@ -20,6 +20,7 @@ from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.api.auth import KeyRing
+from drdoom.api.limits import RateLimiter
 from drdoom.api.main import Service, create_app, set_service
 from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
@@ -337,6 +338,23 @@ def test_an_empty_key_ring_accepts_nobody(tmp_path) -> None:
     assert response.status_code == 401
 
 
+def test_an_expired_key_approves_nothing_and_health_says_so(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    expired = KeyRing({KEY: PRINCIPAL}, {KEY: datetime(2020, 1, 1, tzinfo=UTC)})
+    app = create_app(service=build_service(tmp_path), keyring=expired)
+    with TestClient(app) as local:
+        incident = local.post("/investigate", json=window_payload()).json()["incident_id"]
+        response = local.post(
+            f"/incidents/{incident}/approve", json={"approved": True}, headers=AUTH
+        )
+        approvals = local.get("/health").json()["components"]["approvals"]
+    set_service(None)
+
+    assert response.status_code == 401
+    assert approvals["ready"] is False
+
+
 @pytest.mark.parametrize("path", ["/incidents/{id}", "/incidents/{id}/audit", "/metrics"])
 def test_reading_what_the_service_knows_requires_a_key(client, path: str) -> None:
     """An incident shows the command approval would run, and its id is no secret."""
@@ -352,6 +370,29 @@ def test_starting_an_investigation_stays_open(client) -> None:
     """The demo has to be clickable; the caller already holds the window it sent."""
     assert client.get("/demo/window").status_code == 200
     assert client.post("/investigate", json=window_payload()).status_code == 200
+
+
+def test_starting_too_many_investigations_is_refused_with_429(tmp_path) -> None:
+    """Open to anyone, each run costs thousands of model tokens."""
+    app = create_app(
+        service=build_service(tmp_path),
+        keyring=KeyRing({KEY: PRINCIPAL}),
+        limiter=RateLimiter(per_caller=2, total=100),
+    )
+    with TestClient(app) as local:
+        codes = [
+            local.post("/investigate", json=window_payload(False)).status_code for _ in range(3)
+        ]
+        streamed = local.post("/investigate/stream", json=window_payload(False))
+        keyed = local.post("/investigate", json=window_payload(False), headers=AUTH)
+        started = local.get("/incidents", headers=AUTH).json()["total"]
+    set_service(None)
+
+    assert codes == [200, 200, 429]
+    assert streamed.status_code == 429
+    assert int(streamed.headers["retry-after"]) >= 1
+    assert keyed.status_code == 200, "a caller with a key has its own allowance"
+    assert started == 3, "a refused request starts nothing"
 
 
 # --- idempotency -------------------------------------------------------------------
@@ -681,7 +722,11 @@ def test_metrics_count_approvals(client) -> None:
         f"/incidents/{incident}/approve", json={"approved": True}, headers={"X-API-Key": KEY}
     )
 
-    assert client.get("/metrics", headers=AUTH).json()["requests"]["approve"] == 1
+    body = client.get("/metrics", headers=AUTH).json()
+    entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
+
+    assert body["requests"]["approve"] == 1
+    assert body["audit_head"] == f"1:{entries[0]['entry_hash']}"
 
 
 def test_the_demo_window_matches_the_expected_shape(client) -> None:
