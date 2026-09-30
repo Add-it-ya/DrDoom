@@ -722,7 +722,11 @@ def test_metrics_count_approvals(client) -> None:
         f"/incidents/{incident}/approve", json={"approved": True}, headers={"X-API-Key": KEY}
     )
 
-    assert client.get("/metrics", headers=AUTH).json()["requests"]["approve"] == 1
+    body = client.get("/metrics", headers=AUTH).json()
+    entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
+
+    assert body["requests"]["approve"] == 1
+    assert body["audit_head"] == f"1:{entries[0]['entry_hash']}"
 
 
 def test_the_demo_window_matches_the_expected_shape(client) -> None:

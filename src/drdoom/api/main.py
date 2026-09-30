@@ -425,6 +425,8 @@ def create_app(
             "requests": snapshot["events"],
             "stages": snapshot["stages"],
             "audit_entries": len(current.audit.entries()),
+            # Worth recording elsewhere: `python -m drdoom.audit --anchor` checks against it.
+            "audit_head": current.audit.head(),
             "audit_chain_intact": valid,
             "audit_chain_detail": reason,
         }

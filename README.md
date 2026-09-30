@@ -391,10 +391,10 @@ The system reads documents it does not control, hands them to a model, shows the
 an engineer, and can act on that engineer's approval — a chain from untrusted input to
 privileged action. [SECURITY.md](SECURITY.md) sets out the threat model, what is done about
 each threat, and, more usefully, what is **not**: API keys that can expire but remain
-static secrets, and an audit chain that is tamper-evident locally but not anchored
-anywhere an attacker could not reach. Starting investigations is rate limited, the
-dashboard's CDN scripts are pinned by hash, and every response carries a Content Security
-Policy.
+static secrets, and an audit chain whose head is published for anchoring
+(`python -m drdoom.audit --anchor`) but kept off the host only if the deployment ships it
+there. Starting investigations is rate limited, the dashboard's CDN scripts are pinned by
+hash, and every response carries a Content Security Policy.
 
 ### Model providers
 

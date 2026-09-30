@@ -145,11 +145,18 @@ of the entry before it. Editing any earlier line breaks the chain from that poin
 recorded at once, from threads or from separate processes, can neither chain to the same
 entry nor overwrite each other.
 
-**Residual risk.** A hash chain in a local file is **tamper-evident, not tamper-proof**.
-Anyone who can write the file can rewrite the whole chain from the point they altered.
-Detecting that requires the head hash to be anchored somewhere the attacker does not
-control — a second host, an append-only log service, or a periodic external witness. That
-is not implemented.
+A hash chain in a local file is only **tamper-evident, not tamper-proof**: anyone who can
+write the file can edit an entry and recompute every hash after it, and the rewritten file
+verifies (a test does exactly that). So the chain's head, `count:sha256`, is published
+where a copy can be kept: in the service log on every append and at every start, and in
+`/metrics`. `python -m drdoom.audit --anchor <count:sha256>` then checks that the chain
+still passes through a head recorded earlier, which catches the consistent rewrite and a
+truncation alike.
+
+**Residual risk.** An anchor protects only as well as the place it is kept. The service
+publishes the head; keeping it where the audit file's writer cannot reach, by shipping logs
+to another host or scraping `/metrics` into an append-only store, is up to the deployment,
+and nothing here checks against an anchor automatically.
 
 ### 6. Credential exposure
 
@@ -210,8 +217,9 @@ from anywhere else.
 
 1. **Short-lived credentials.** Keys can expire, but they are static secrets with no
    revocation short of editing the configuration and restarting.
-2. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
-   rewrite history undetected.
+2. **Keeping the audit chain's head off the host.** The head is published in the log and
+   `/metrics`, but storing it where the audit file's writer cannot reach is left to the
+   deployment.
 3. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry
    run, the executor needs its own credential, scoped narrowly, separate from the API's.
 

@@ -200,6 +200,9 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
         audit=audit,
         risk=RiskAssessor(reviewer),
     )
+    intact, detail = audit.verify()
+    log_audit = logger.info if intact else logger.error
+    log_audit("audit log: %s, chain head %s", detail, audit.head())
     if settings.retention_days:
         removed = investigator.prune(timedelta(days=settings.retention_days))
         logger.info(
