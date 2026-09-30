@@ -223,7 +223,7 @@ class Service:
         reviewer = self.investigator.risk.provider
         model_ready = not isinstance(provider, UnavailableProvider)
         reviewer_ready = not isinstance(reviewer, UnavailableProvider)
-        approvals_ready = len(current_keyring()) > 0
+        approvals_ready = current_keyring().usable() > 0
         try:
             if self.connection is not None:
                 self.connection.execute("select 1").fetchone()

@@ -111,9 +111,14 @@ plan. The right to answer a gate is now claimed first with an insert the investi
 store performs atomically, so a second decision, from another thread or another process,
 is refused with 409 (`src/drdoom/agents/graph.py`).
 
-**Residual risk.** Static API keys have no expiry and no revocation beyond editing the
-configuration. For anything beyond a demonstration, short-lived tokens tied to an identity
-provider would replace them.
+A key can carry an expiry date (`name:key:YYYY-MM-DD`), from the start of which it is
+refused like a wrong key; start-up logs every key's expiry, and `/health` counts only keys
+that still work (`src/drdoom/api/auth.py`).
+
+**Residual risk.** Keys are still static secrets: an expiry has to be chosen by whoever
+writes the configuration, and revoking a key early means editing it and restarting. For
+anything beyond a demonstration, short-lived tokens tied to an identity provider would
+replace them.
 
 ### 4. Substituting the plan after approval
 
@@ -195,7 +200,8 @@ from anywhere else.
 ## Known gaps, in the order they should be closed
 
 1. **Rate limiting on `/investigate`.** Currently unauthenticated and unthrottled.
-2. **Short-lived credentials.** Static API keys have no expiry or revocation path.
+2. **Short-lived credentials.** Keys can expire, but they are static secrets with no
+   revocation short of editing the configuration and restarting.
 3. **Anchoring the audit chain externally.** Tamper-evidence is local, so a writer can
    rewrite history undetected.
 4. **Real execution is not implemented.** Everything is dry-run. When it stops being a dry

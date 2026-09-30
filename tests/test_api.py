@@ -337,6 +337,23 @@ def test_an_empty_key_ring_accepts_nobody(tmp_path) -> None:
     assert response.status_code == 401
 
 
+def test_an_expired_key_approves_nothing_and_health_says_so(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    expired = KeyRing({KEY: PRINCIPAL}, {KEY: datetime(2020, 1, 1, tzinfo=UTC)})
+    app = create_app(service=build_service(tmp_path), keyring=expired)
+    with TestClient(app) as local:
+        incident = local.post("/investigate", json=window_payload()).json()["incident_id"]
+        response = local.post(
+            f"/incidents/{incident}/approve", json={"approved": True}, headers=AUTH
+        )
+        approvals = local.get("/health").json()["components"]["approvals"]
+    set_service(None)
+
+    assert response.status_code == 401
+    assert approvals["ready"] is False
+
+
 @pytest.mark.parametrize("path", ["/incidents/{id}", "/incidents/{id}/audit", "/metrics"])
 def test_reading_what_the_service_knows_requires_a_key(client, path: str) -> None:
     """An incident shows the command approval would run, and its id is no secret."""
