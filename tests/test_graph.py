@@ -402,6 +402,24 @@ def test_a_decision_abandoned_mid_way_can_be_taken_over(tmp_path) -> None:
     assert AuditLog(audit_path).entries()[0].principal == "aditya"
 
 
+def test_a_finished_decision_is_not_taken_over_however_old_its_claim(tmp_path) -> None:
+    """Before, a resume after the expiry was accepted and quietly returned the old decision."""
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        investigator.resume("incident", approved=True, principal="aditya")
+        expired = time.time() - CLAIM_EXPIRY_SECONDS - 1
+        with checkpointer.cursor() as cursor:
+            cursor.execute("UPDATE decision_claims SET claimed_at = ?", (expired,))
+
+        with pytest.raises(DecisionTakenError):
+            investigator.resume("incident", approved=False, principal="on-call-b")
+
+    entries = AuditLog(audit_path).entries()
+    assert [entry.principal for entry in entries] == ["aditya"]
+
+
 def test_a_decision_in_progress_is_not_taken_over(tmp_path) -> None:
     with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
         investigator = make_investigator(checkpointer)
