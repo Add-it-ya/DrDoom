@@ -496,6 +496,10 @@ class Investigator:
 
         An insert that the primary key refuses is a compare-and-set SQLite performs
         atomically, whichever thread or process gets there first.
+
+        An old claim is taken over only while the incident still waits at the gate. A
+        claim whose incident moved past the gate was not abandoned but finished, and the
+        decision it recorded stands.
         """
         now = time.time()
         with self.checkpointer.cursor() as cursor:
@@ -505,14 +509,16 @@ class Investigator:
             )
             if cursor.rowcount == 1:
                 return
-            cursor.execute(
-                "UPDATE decision_claims SET principal = ?, claimed_at = ? "
-                "WHERE thread_id = ? AND claimed_at < ?",
-                (principal, now, thread_id, now - CLAIM_EXPIRY_SECONDS),
-            )
-            if cursor.rowcount == 1:
-                logger.warning("incident %s: took over a decision abandoned mid-way", thread_id)
-                return
+        if self.status(thread_id).status == "awaiting_approval":
+            with self.checkpointer.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE decision_claims SET principal = ?, claimed_at = ? "
+                    "WHERE thread_id = ? AND claimed_at < ?",
+                    (principal, now, thread_id, now - CLAIM_EXPIRY_SECONDS),
+                )
+                if cursor.rowcount == 1:
+                    logger.warning("incident %s: took over a decision abandoned mid-way", thread_id)
+                    return
         raise DecisionTakenError(f"a decision on incident {thread_id} is already being recorded")
 
     def _release_if_unanswered(self, thread_id: str) -> None:
