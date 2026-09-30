@@ -38,9 +38,11 @@ from __future__ import annotations
 import logging
 import operator
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -75,6 +77,20 @@ UNKNOWN_PRINCIPAL = "unknown"
 # incident id ties it to this run, and not to a client that may be a browser.
 STOPPED_DETAIL = "the investigation stopped at an internal error; the service log has the cause"
 _STOPPED: dict[str, Any] = {}
+
+# The right to answer an approval gate is claimed with a row in the checkpoint database, so
+# it holds between threads, processes and restarts alike. A claim that is never finished
+# is left only by a process that died mid-decision, and a decision takes seconds, so after
+# this long another caller may take it over.
+CLAIM_EXPIRY_SECONDS = 15 * 60
+_CLAIMS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS decision_claims "
+    "(thread_id TEXT PRIMARY KEY, principal TEXT NOT NULL, claimed_at REAL NOT NULL)"
+)
+
+
+class DecisionTakenError(RuntimeError):
+    """Another caller already holds the decision on this incident."""
 
 
 class InvestigationState(TypedDict, total=False):
@@ -177,6 +193,8 @@ class Investigator:
         self.counters = counters or Counters()
         self.checkpointer = checkpointer
         self.graph = self._build().compile(checkpointer=checkpointer)
+        with self.checkpointer.cursor() as cursor:
+            cursor.execute(_CLAIMS_TABLE)
 
     # --- nodes ---------------------------------------------------------------------
 
@@ -456,11 +474,57 @@ class Investigator:
     def resume(
         self, thread_id: str, approved: bool, principal: str = UNKNOWN_PRINCIPAL
     ) -> Investigation:
-        """Answer a suspended investigation and run it to completion."""
-        self.graph.update_state(self._config(thread_id), {"principal": principal})
-        with incident_context(thread_id):
-            result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
+        """Answer a suspended investigation and run it to completion, at most once.
+
+        Checking that the incident waits at the gate and then resuming it are two steps,
+        and two approvals arriving together both passed the check: in 20 of 20 trials both
+        were accepted and the plan ran twice. The right to answer is therefore claimed
+        first, atomically; a caller that loses gets ``DecisionTakenError``.
+        """
+        self._claim(thread_id, principal)
+        try:
+            self.graph.update_state(self._config(thread_id), {"principal": principal})
+            with incident_context(thread_id):
+                result = self.graph.invoke(Command(resume=approved), config=self._config(thread_id))
+        except Exception:
+            self._release_if_unanswered(thread_id)
+            raise
         return self._outcome(thread_id, result)
+
+    def _claim(self, thread_id: str, principal: str) -> None:
+        """Take the one right to answer this incident's gate, or raise ``DecisionTakenError``.
+
+        An insert that the primary key refuses is a compare-and-set SQLite performs
+        atomically, whichever thread or process gets there first.
+        """
+        now = time.time()
+        with self.checkpointer.cursor() as cursor:
+            cursor.execute(
+                "INSERT OR IGNORE INTO decision_claims VALUES (?, ?, ?)",
+                (thread_id, principal, now),
+            )
+            if cursor.rowcount == 1:
+                return
+            cursor.execute(
+                "UPDATE decision_claims SET principal = ?, claimed_at = ? "
+                "WHERE thread_id = ? AND claimed_at < ?",
+                (principal, now, thread_id, now - CLAIM_EXPIRY_SECONDS),
+            )
+            if cursor.rowcount == 1:
+                logger.warning("incident %s: took over a decision abandoned mid-way", thread_id)
+                return
+        raise DecisionTakenError(f"a decision on incident {thread_id} is already being recorded")
+
+    def _release_if_unanswered(self, thread_id: str) -> None:
+        """Give the claim back when a failed resume left the incident waiting at the gate.
+
+        Nothing past the gate ran in that case, so the decision can safely be tried again.
+        Once the gate has been passed the claim stays, whatever happened after it.
+        """
+        if self.status(thread_id).status != "awaiting_approval":
+            return
+        with self.checkpointer.cursor() as cursor:
+            cursor.execute("DELETE FROM decision_claims WHERE thread_id = ?", (thread_id,))
 
     def stream_start(
         self,
@@ -489,9 +553,13 @@ class Investigator:
     def stream_resume(
         self, thread_id: str, approved: bool, principal: str = UNKNOWN_PRINCIPAL
     ) -> Iterator[dict[str, Any]]:
-        """Answer a suspended investigation, streaming the remaining nodes."""
-        self.graph.update_state(self._config(thread_id), {"principal": principal})
-        yield from self._stream(Command(resume=approved), thread_id)
+        """Answer a suspended investigation, streaming the remaining nodes, at most once."""
+        self._claim(thread_id, principal)
+        try:
+            self.graph.update_state(self._config(thread_id), {"principal": principal})
+            yield from self._stream(Command(resume=approved), thread_id)
+        finally:
+            self._release_if_unanswered(thread_id)
 
     def _stream(self, payload: Any, thread_id: str) -> Iterator[dict[str, Any]]:
         """Advance the graph one node at a time, inside the incident's log context.
@@ -561,6 +629,35 @@ class Investigator:
                 (limit, offset),
             ).fetchall()
         return [self.status(thread_id) for (thread_id,) in rows], int(total)
+
+    def prune(self, older_than: timedelta, now: datetime | None = None) -> int:
+        """Delete stored investigations that finished longer ago than ``older_than``.
+
+        Every step of every investigation is kept, about 57 KiB of checkpoints each, and
+        nothing removed them. Only finished ones go: an incident waiting at the gate is
+        kept however old, because a decision is still owed on it. The audit log is not
+        touched; it is the record of what was decided and outlives the working state.
+        """
+        cutoff = (now or datetime.now(UTC)) - older_than
+        with self.checkpointer.cursor(transaction=False) as cursor:
+            threads = [
+                thread_id
+                for (thread_id,) in cursor.execute(
+                    "SELECT DISTINCT thread_id FROM checkpoints WHERE checkpoint_ns = ''"
+                ).fetchall()
+            ]
+        removed = 0
+        for thread_id in threads:
+            investigation = self.status(thread_id)
+            if investigation.status == "awaiting_approval" or not investigation.updated_at:
+                continue
+            if datetime.fromisoformat(investigation.updated_at) >= cutoff:
+                continue
+            self.checkpointer.delete_thread(thread_id)
+            with self.checkpointer.cursor() as cursor:
+                cursor.execute("DELETE FROM decision_claims WHERE thread_id = ?", (thread_id,))
+            removed += 1
+        return removed
 
 
 def _forwarding(collector: Timings, counters: Counters):

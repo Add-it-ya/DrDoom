@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -118,18 +120,34 @@ def timed(stage: str, timings: Timings | None = None) -> Iterator[None]:
         )
 
 
-class Counters:
-    """Process-wide counters and stage latencies for the metrics endpoint."""
+# Percentiles describe each stage's most recent observations. Keeping every one grew
+# without limit, and /metrics sorted the whole history on each call.
+LATENCY_WINDOW = 1000
 
-    def __init__(self) -> None:
+
+class Counters:
+    """Process-wide counters and stage latencies for the metrics endpoint.
+
+    Requests are served from a thread pool, so every update and read holds a lock: a count
+    kept as read-then-write loses increments when two threads interleave, and a bounded
+    buffer cannot be copied while another thread appends to it.
+    """
+
+    def __init__(self, window: int = LATENCY_WINDOW) -> None:
+        self.window = window
         self.events: dict[str, int] = {}
-        self.latencies: dict[str, list[float]] = {}
+        self.observed: dict[str, int] = {}
+        self.latencies: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
 
     def increment(self, name: str, amount: int = 1) -> None:
-        self.events[name] = self.events.get(name, 0) + amount
+        with self._lock:
+            self.events[name] = self.events.get(name, 0) + amount
 
     def observe(self, stage: str, milliseconds: float) -> None:
-        self.latencies.setdefault(stage, []).append(milliseconds)
+        with self._lock:
+            self.latencies.setdefault(stage, deque(maxlen=self.window)).append(milliseconds)
+            self.observed[stage] = self.observed.get(stage, 0) + 1
 
     @staticmethod
     def _percentile(values: list[float], fraction: float) -> float:
@@ -138,15 +156,20 @@ class Counters:
         return round(ordered[index], 1)
 
     def snapshot(self) -> dict[str, Any]:
+        """Counts since start-up; percentiles over at most the last ``window`` of each stage."""
+        with self._lock:
+            events = dict(self.events)
+            observed = dict(self.observed)
+            recent = {stage: list(values) for stage, values in self.latencies.items() if values}
         return {
-            "events": dict(self.events),
+            "events": events,
             "stages": {
                 stage: {
-                    "count": len(values),
+                    "count": observed[stage],
                     "p50_ms": self._percentile(values, 0.50),
                     "p95_ms": self._percentile(values, 0.95),
+                    "sampled": len(values),
                 }
-                for stage, values in sorted(self.latencies.items())
-                if values
+                for stage, values in sorted(recent.items())
             },
         }

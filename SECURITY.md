@@ -105,6 +105,12 @@ characters), its audit trail and `/metrics`. Open are only `/health`, the demo w
 starting an investigation, whose caller already holds the window it sent
 (`src/drdoom/api/main.py`).
 
+One approval runs one plan. Checking that an incident waits at the gate and resuming it
+were two steps, and two approvals sent together both passed the check and both ran the
+plan. The right to answer a gate is now claimed first with an insert the investigation
+store performs atomically, so a second decision, from another thread or another process,
+is refused with 409 (`src/drdoom/agents/graph.py`).
+
 **Residual risk.** Static API keys have no expiry and no revocation beyond editing the
 configuration. For anything beyond a demonstration, short-lived tokens tied to an identity
 provider would replace them.
@@ -130,7 +136,9 @@ a bug or a race rather than against an attacker who already controls the process
 **What is done.** The audit log is append-only JSON lines, and each entry carries the hash
 of the entry before it. Editing any earlier line breaks the chain from that point;
 `AuditLog.verify()` reports where, and `/metrics` exposes whether the chain still verifies
-(`src/drdoom/audit.py`).
+(`src/drdoom/audit.py`). Reads and appends hold a lock on a sibling file, so two decisions
+recorded at once, from threads or from separate processes, can neither chain to the same
+entry nor overwrite each other.
 
 **Residual risk.** A hash chain in a local file is **tamper-evident, not tamper-proof**.
 Anyone who can write the file can rewrite the whole chain from the point they altered.

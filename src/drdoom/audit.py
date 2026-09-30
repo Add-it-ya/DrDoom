@@ -19,6 +19,12 @@ Each entry also records how the risk was decided: the policy floor, the independ
 assessment, the author's own rating, and the final rating the gate used. Entries written
 before that existed carry no such field, and their hashes are computed exactly as before,
 so an older log still verifies.
+
+Appending reads the last hash and then writes after it, and two writers doing that at once
+both chain to the same entry. On Windows they can also land at the same offset, so one
+decision overwrites another. Eight threads appending 25 entries each kept 199 of 200 and
+broke the chain at entry 1; four processes kept 172. Every read and append therefore
+holds a lock on a sibling file, which excludes other threads and other processes alike.
 """
 
 from __future__ import annotations
@@ -30,6 +36,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from drdoom.config import get_settings
 
@@ -77,8 +85,16 @@ class AuditLog:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or get_settings().project_root / "state" / "audit.jsonl"
+        self._lock = FileLock(self.path.with_name(self.path.name + ".lock"))
 
     def entries(self) -> list[AuditEntry]:
+        if not self.path.is_file():
+            return []
+        # Under the lock, so a reader never sees an append half written.
+        with self._lock:
+            return self._read()
+
+    def _read(self) -> list[AuditEntry]:
         if not self.path.is_file():
             return []
         return [
@@ -104,29 +120,35 @@ class AuditLog:
         execution: str,
         risk: dict[str, Any] | None = None,
     ) -> AuditEntry:
-        """Append one decision. The file is only ever opened for append."""
-        payload: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-            "incident_id": incident_id,
-            "principal": principal,
-            "decision": decision,
-            "risk_level": risk_level,
-            "immediate_action": immediate_action,
-            "plan_hash": plan_hash,
-            "executed": executed,
-            "execution": execution,
-            "previous_hash": self.last_hash(),
-        }
-        if risk is not None:
-            payload["risk"] = risk
-        entry = AuditEntry(**payload, entry_hash=compute_entry_hash(payload))
+        """Append one decision. The file is only ever opened for append.
 
+        Reading the previous hash and writing after it happen under one lock, so no other
+        writer can chain to the same entry in between.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(entry.payload() | {"entry_hash": entry.entry_hash}, sort_keys=True)
-                + "\n"
-            )
+        with self._lock:
+            entries = self._read()
+            payload: dict[str, Any] = {
+                "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+                "incident_id": incident_id,
+                "principal": principal,
+                "decision": decision,
+                "risk_level": risk_level,
+                "immediate_action": immediate_action,
+                "plan_hash": plan_hash,
+                "executed": executed,
+                "execution": execution,
+                "previous_hash": entries[-1].entry_hash if entries else GENESIS,
+            }
+            if risk is not None:
+                payload["risk"] = risk
+            entry = AuditEntry(**payload, entry_hash=compute_entry_hash(payload))
+
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(entry.payload() | {"entry_hash": entry.entry_hash}, sort_keys=True)
+                    + "\n"
+                )
 
         logger.info(
             "audit: %s %s by %s (plan %s)",

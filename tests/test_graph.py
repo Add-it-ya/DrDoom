@@ -8,6 +8,10 @@ less machinery.
 import json
 import subprocess
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -18,8 +22,10 @@ from drdoom.agents.diagnosis import DiagnosisAgent
 from drdoom.agents.graph import (
     APPROVED,
     AUTO_APPROVED,
+    CLAIM_EXPIRY_SECONDS,
     POLICY_PRINCIPAL,
     REJECTED,
+    DecisionTakenError,
     Investigator,
     open_checkpointer,
 )
@@ -312,6 +318,180 @@ def test_every_decision_produces_a_report(tmp_path, approved: bool, expected: st
 
     assert outcome.status == expected
     assert outcome.report
+
+
+# --- one decision per gate ----------------------------------------------------------
+
+
+def test_a_second_resume_is_refused_and_nothing_runs_twice(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        investigator.resume("incident", approved=True, principal="aditya")
+
+        with pytest.raises(DecisionTakenError):
+            investigator.resume("incident", approved=True, principal="aditya")
+
+    assert len(AuditLog(audit_path).entries()) == 1
+
+
+def test_two_resumes_at_once_run_the_plan_once(tmp_path) -> None:
+    """Unclaimed, two approvals arriving together both ran the plan in 20 of 20 trials."""
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        barrier = threading.Barrier(2)
+
+        def decide(principal: str) -> str:
+            barrier.wait()
+            try:
+                return investigator.resume("incident", approved=True, principal=principal).status
+            except DecisionTakenError:
+                return "refused"
+
+        with ThreadPoolExecutor(2) as pool:
+            results = sorted(pool.map(decide, ["aditya", "on-call-b"]))
+
+    assert results == ["complete", "refused"]
+    assert len(AuditLog(audit_path).entries()) == 1
+
+
+def test_two_processes_resuming_at_once_run_the_plan_once(tmp_path) -> None:
+    """The claim is a row in the shared database, so it holds between processes too."""
+    database = tmp_path / "s.sqlite"
+    subprocess.run(
+        [sys.executable, str(WORKER), "start", str(database), "incident"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    workers = [
+        subprocess.Popen(
+            [sys.executable, str(WORKER), "resume", str(database), "incident", "true"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    errors = [worker.communicate(timeout=120)[1] for worker in workers]
+
+    assert sorted(worker.returncode for worker in workers) == [0, 1]
+    assert any("DecisionTakenError" in error for error in errors)
+    assert len(AuditLog(database.with_name("audit.jsonl")).entries()) == 1
+
+
+def test_a_decision_abandoned_mid_way_can_be_taken_over(tmp_path) -> None:
+    """Only a process that died after claiming leaves a claim unfinished."""
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        abandoned = time.time() - CLAIM_EXPIRY_SECONDS - 1
+        with checkpointer.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO decision_claims VALUES (?, ?, ?)", ("incident", "gone", abandoned)
+            )
+
+        outcome = investigator.resume("incident", approved=True, principal="aditya")
+
+    assert outcome.status == "complete"
+    assert AuditLog(audit_path).entries()[0].principal == "aditya"
+
+
+def test_a_decision_in_progress_is_not_taken_over(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        with checkpointer.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO decision_claims VALUES (?, ?, ?)", ("incident", "busy", time.time())
+            )
+
+        with pytest.raises(DecisionTakenError):
+            investigator.resume("incident", approved=True, principal="aditya")
+
+        assert investigator.status("incident").status == "awaiting_approval"
+
+
+def test_a_resume_that_fails_before_the_gate_can_be_tried_again(tmp_path, monkeypatch) -> None:
+    """Nothing past the gate ran, so the claim is given back rather than held forever."""
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "incident")
+        working = investigator.graph.update_state
+
+        def fail_once(*args, **kwargs):
+            monkeypatch.setattr(investigator.graph, "update_state", working)
+            raise RuntimeError("the store was briefly unavailable")
+
+        monkeypatch.setattr(investigator.graph, "update_state", fail_once)
+
+        with pytest.raises(RuntimeError):
+            investigator.resume("incident", approved=True, principal="aditya")
+        outcome = investigator.resume("incident", approved=True, principal="aditya")
+
+    assert outcome.status == "complete"
+
+
+# --- retention ---------------------------------------------------------------------
+
+A_MONTH_ON = timedelta(days=31)
+
+
+def test_old_finished_investigations_are_pruned_and_the_audit_log_is_kept(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer, audit_path=audit_path)
+        investigator.start(disturbed_window(), "latency climbing", "decided")
+        investigator.resume("decided", approved=True, principal="aditya")
+        investigator.start(calm_window(), "all quiet", "calm")
+        investigator.start(disturbed_window(), "latency climbing", "waiting")
+
+        removed = investigator.prune(timedelta(days=30), now=datetime.now(UTC) + A_MONTH_ON)
+
+        assert removed == 2
+        assert investigator.status("decided").state == {}
+        assert investigator.status("calm").state == {}
+        assert investigator.recent(10)[1] == 1
+
+    assert len(AuditLog(audit_path).entries()) == 1
+
+
+def test_an_incident_awaiting_a_decision_is_kept_however_old(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "waiting")
+
+        investigator.prune(timedelta(days=30), now=datetime.now(UTC) + timedelta(days=3650))
+
+        assert investigator.status("waiting").status == "awaiting_approval"
+        assert investigator.resume("waiting", approved=True).status == "complete"
+
+
+def test_recent_investigations_are_not_pruned(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(calm_window(), "all quiet", "calm")
+
+        assert investigator.prune(timedelta(days=30)) == 0
+        assert investigator.status("calm").status == "no_incident"
+
+
+def test_pruning_removes_the_decision_claim_with_the_incident(tmp_path) -> None:
+    with open_checkpointer(tmp_path / "s.sqlite") as checkpointer:
+        investigator = make_investigator(checkpointer)
+        investigator.start(disturbed_window(), "latency climbing", "decided")
+        investigator.resume("decided", approved=True)
+
+        investigator.prune(timedelta(days=30), now=datetime.now(UTC) + A_MONTH_ON)
+
+        with checkpointer.cursor(transaction=False) as cursor:
+            claims = cursor.execute("SELECT COUNT(*) FROM decision_claims").fetchone()[0]
+        assert claims == 0
 
 
 # --- the gate inside the pipeline ---------------------------------------------------

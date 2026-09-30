@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Aditya Raj", email = "skrair36@gmail.com" }]
 dependencies = [
     "fastapi>=0.115,<1",
+    "filelock>=3.12,<4",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
     "numpy>=2.0,<3",
