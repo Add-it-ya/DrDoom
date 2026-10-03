@@ -9,6 +9,7 @@ to fix it, because retrieval has no honest fallback.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 import numpy as np
 
@@ -199,6 +200,16 @@ def build_service(provider: LLMProvider | None = None, use_dense: bool = True):
         audit=audit,
         risk=RiskAssessor(reviewer),
     )
+    intact, detail = audit.verify()
+    log_audit = logger.info if intact else logger.error
+    log_audit("audit log: %s, chain head %s", detail, audit.head())
+    if settings.retention_days:
+        removed = investigator.prune(timedelta(days=settings.retention_days))
+        logger.info(
+            "removed %d finished investigation(s) older than %d days",
+            removed,
+            settings.retention_days,
+        )
     logger.info("service ready: %s", describe(investigator))
     return Service(investigator=investigator, audit=audit, connection=connection)
 

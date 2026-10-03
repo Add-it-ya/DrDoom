@@ -19,17 +19,27 @@ Each entry also records how the risk was decided: the policy floor, the independ
 assessment, the author's own rating, and the final rating the gate used. Entries written
 before that existed carry no such field, and their hashes are computed exactly as before,
 so an older log still verifies.
+
+Appending reads the last hash and then writes after it, and two writers doing that at once
+both chain to the same entry. On Windows they can also land at the same offset, so one
+decision overwrites another. Eight threads appending 25 entries each kept 199 of 200 and
+broke the chain at entry 1; four processes kept 172. Every read and append therefore
+holds a lock on a sibling file, which excludes other threads and other processes alike.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import logging
+import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from drdoom.config import get_settings
 
@@ -77,8 +87,16 @@ class AuditLog:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or get_settings().project_root / "state" / "audit.jsonl"
+        self._lock = FileLock(self.path.with_name(self.path.name + ".lock"))
 
     def entries(self) -> list[AuditEntry]:
+        if not self.path.is_file():
+            return []
+        # Under the lock, so a reader never sees an append half written.
+        with self._lock:
+            return self._read()
+
+    def _read(self) -> list[AuditEntry]:
         if not self.path.is_file():
             return []
         return [
@@ -104,49 +122,105 @@ class AuditLog:
         execution: str,
         risk: dict[str, Any] | None = None,
     ) -> AuditEntry:
-        """Append one decision. The file is only ever opened for append."""
-        payload: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-            "incident_id": incident_id,
-            "principal": principal,
-            "decision": decision,
-            "risk_level": risk_level,
-            "immediate_action": immediate_action,
-            "plan_hash": plan_hash,
-            "executed": executed,
-            "execution": execution,
-            "previous_hash": self.last_hash(),
-        }
-        if risk is not None:
-            payload["risk"] = risk
-        entry = AuditEntry(**payload, entry_hash=compute_entry_hash(payload))
+        """Append one decision. The file is only ever opened for append.
 
+        Reading the previous hash and writing after it happen under one lock, so no other
+        writer can chain to the same entry in between.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(entry.payload() | {"entry_hash": entry.entry_hash}, sort_keys=True)
-                + "\n"
-            )
+        with self._lock:
+            entries = self._read()
+            payload: dict[str, Any] = {
+                "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+                "incident_id": incident_id,
+                "principal": principal,
+                "decision": decision,
+                "risk_level": risk_level,
+                "immediate_action": immediate_action,
+                "plan_hash": plan_hash,
+                "executed": executed,
+                "execution": execution,
+                "previous_hash": entries[-1].entry_hash if entries else GENESIS,
+            }
+            if risk is not None:
+                payload["risk"] = risk
+            entry = AuditEntry(**payload, entry_hash=compute_entry_hash(payload))
 
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(entry.payload() | {"entry_hash": entry.entry_hash}, sort_keys=True)
+                    + "\n"
+                )
+            head = format_anchor(len(entries) + 1, entry.entry_hash)
+
+        # The new head goes to the service log, which can be shipped somewhere the audit
+        # file's writer cannot reach. That copy is what an anchored verify checks against.
         logger.info(
-            "audit: %s %s by %s (plan %s)",
+            "audit: %s %s by %s (plan %s); chain head %s",
             incident_id,
             decision,
             principal,
             plan_hash[:12],
+            head,
         )
         return entry
 
-    def verify(self) -> tuple[bool, str]:
-        """Walk the chain and report the first break, if there is one."""
+    def head(self) -> str:
+        """The chain's head as ``count:hash``: the value worth keeping somewhere else."""
+        entries = self.entries()
+        return format_anchor(len(entries), entries[-1].entry_hash if entries else GENESIS)
+
+    def verify(self, anchor: str | None = None) -> tuple[bool, str]:
+        """Walk the chain and report the first break, if there is one.
+
+        The chain alone cannot catch a writer who edits an entry and then recomputes every
+        hash after it: the rewritten file verifies. An anchor, a head recorded elsewhere
+        earlier, can. With one, the chain must still pass through that entry unchanged.
+        """
+        entries = self.entries()
         previous = GENESIS
-        for position, entry in enumerate(self.entries()):
+        for position, entry in enumerate(entries):
             if entry.previous_hash != previous:
                 return False, f"entry {position} does not follow the one before it"
             if compute_entry_hash(entry.payload()) != entry.entry_hash:
                 return False, f"entry {position} has been altered"
             previous = entry.entry_hash
+        if anchor is not None:
+            count, expected = parse_anchor(anchor)
+            if count > len(entries):
+                return False, f"the log has {len(entries)} entries; the anchor recorded {count}"
+            actual = entries[count - 1].entry_hash if count else GENESIS
+            if actual != expected:
+                return False, f"entry {count - 1} no longer matches the anchor recorded elsewhere"
         return True, "chain intact"
 
     def for_incident(self, incident_id: str) -> list[AuditEntry]:
         return [entry for entry in self.entries() if entry.incident_id == incident_id]
+
+
+def format_anchor(count: int, entry_hash: str) -> str:
+    return f"{count}:{entry_hash}"
+
+
+def parse_anchor(text: str) -> tuple[int, str]:
+    count, _, entry_hash = text.strip().partition(":")
+    if not count.isdigit() or len(entry_hash) != len(GENESIS):
+        raise ValueError(f"an anchor is count:sha256, got {text!r}")
+    return int(count), entry_hash
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Check the audit log, optionally against a head recorded elsewhere earlier."""
+    parser = argparse.ArgumentParser(description="Verify the audit log's hash chain.")
+    parser.add_argument("--path", type=Path, default=None, help="default: state/audit.jsonl")
+    parser.add_argument("--anchor", help="a chain head, count:sha256, from the log or /metrics")
+    args = parser.parse_args(argv)
+
+    log = AuditLog(args.path)
+    valid, reason = log.verify(args.anchor)
+    print(f"{reason}; head {log.head()}")
+    return 0 if valid else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

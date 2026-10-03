@@ -44,7 +44,8 @@ jobs:
   evaluate:
     # Scores the generated half against recorded model responses, so it costs
     # nothing and gives the same answer every run. Fails the build when a score
-    # falls below its floor.
+    # falls below its floor, or when any case degrades (usually a missing
+    # recording after a prompt or retrieval change).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -57,12 +58,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --dev
 
+      # The corpus directory also holds the chunk embedding matrix, which depends on
+      # how pages are chunked and embedded. A key on the corpus alone restores a stale
+      # matrix that every run then recomputes and never saves.
       - name: Restore the document corpus
         id: corpus
         uses: actions/cache@v4
         with:
           path: data/raw/corpus
-          key: corpus-${{ hashFiles('src/drdoom/rag/corpus.py') }}
+          key: corpus-${{ hashFiles('src/drdoom/rag/corpus.py', 'src/drdoom/rag/ingest.py', 'src/drdoom/rag/embed.py') }}
 
       - name: Fetch the document corpus
         if: steps.corpus.outputs.cache-hit != 'true'

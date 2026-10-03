@@ -129,10 +129,15 @@ python -m drdoom.classify.train
 
 ### Retrieval
 
-430 documents of Kubernetes and Prometheus operational documentation, 5671 chunks, with
+430 documents of Kubernetes and Prometheus operational documentation, 5293 chunks, with
 no filter narrowing the search to a document the classifier already picked. Scored on 40
 hand-authored operational questions in [`evals/`](evals/retrieval_queries.json). Full
 ablation in [docs/retrieval-results.md](docs/retrieval-results.md).
+
+HTML is taken out of each page before it is chunked, since passages go straight into
+model prompts: scripts, styles and comments with their contents, other tags down to their
+text, code fences untouched. A fifth of the chunks had carried markup, mostly tables. The
+served configuration scores the same without it, and the corpus is 9% shorter.
 
 Both sources are pinned to one upstream commit each, the heads of their `main` branches
 when these results were measured, and every download is checked against a digest of the
@@ -142,13 +147,13 @@ had quietly stopped reproducing the scores published here.
 
 | Configuration | Hit@5 | Recall@5 | MRR |
 |---|---:|---:|---:|
-| BM25 only | 0.725 | 0.675 | 0.539 |
+| BM25 only | 0.750 | 0.700 | 0.538 |
 | Dense only (MiniLM) | 0.825 | 0.787 | 0.630 |
-| Hybrid (BM25 + MiniLM) | 0.850 | 0.812 | 0.617 |
+| Hybrid (BM25 + MiniLM) | 0.850 | 0.800 | 0.630 |
 | Hybrid + cross-encoder rerank | **0.875** | **0.838** | **0.699** |
 
 Here, unlike detection and classification, every component pays for itself. The reranker
-is the clearest case: it adds little to hit rate but moves MRR from 0.617 to 0.699, which
+is the clearest case: it adds little to hit rate but moves MRR from 0.630 to 0.699, which
 is what reranking is for — it does not find more, it orders better, and position decides
 what fits in the model's context.
 
@@ -226,6 +231,11 @@ makes this a graph rather than four function calls in sequence. The test that pr
 starts an investigation in one interpreter, exits, and finishes it in a second one that
 shares nothing but the database file.
 
+Every step of every investigation is checkpointed, about 57 KiB each. At start-up the
+service deletes finished investigations older than `DRDOOM_RETENTION_DAYS` (30 by default;
+0 keeps everything). An incident still waiting for a decision is never deleted, and the
+audit log, the record of what was decided, is never pruned.
+
 ```
 triage ─┬─ no incident ─────────────────────────────► end
         └─ incident ─► diagnose ─► remediate ─► assess_risk ─► approval ─► report ─► end
@@ -248,7 +258,9 @@ delivers the same run a stage at a time over server-sent events, so the dashboar
 progressively instead of blocking on one long request.
 `POST /incidents/{id}/approve` resumes a suspended one. `GET /incidents` lists stored
 investigations newest first (`limit`, `offset`), and the dashboard reopens any of them,
-approval gate included.
+approval gate included. Approving and every read of stored state (`/incidents`,
+`/incidents/{id}`, its `/audit`, and `/metrics`) take an `X-API-Key`; health, the demo
+window and starting an investigation do not.
 
 The service retrieves with BM25 and the MiniLM encoder fused, then reorders the shortlist
 with the cross-encoder: the configuration the evaluation suite scores. The first start
@@ -263,7 +275,11 @@ configure credentials refuses approvals rather than accepting them from anyone.
 
 **Approving twice is safe.** Networks retry, so a recorded decision is returned as it
 stands rather than applied a second time. A later request with the opposite answer
-changes nothing: the recorded decision is returned as it stands.
+changes nothing: the recorded decision is returned as it stands. Two decisions arriving
+at once cannot both run either: the first claims the gate with an atomic write to the
+investigation store, and the second gets 409, or the first one's outcome if it has
+finished. Before that claim existed, two simultaneous approvals both ran the plan in 20
+of 20 trials.
 
 **No model output reaches the DOM as markup.** Plain fields go through `textContent`; the
 postmortem is markdown, so it goes through DOMPurify. That chain matters here more than
@@ -282,9 +298,9 @@ described the classical half, which is the easy half to measure.
 
 The suite scores retrieval and the groundedness of generated diagnoses over 15 labelled
 incident scenarios and 40 retrieval queries, and CI fails the build when a score drops
-below its floor. It runs against **recorded** model responses, so it is free, offline and
-identical on every run — which is what lets it gate a merge rather than being a script
-somebody runs occasionally.
+below its floor or any case degrades. It runs against **recorded** model responses, so it
+is free, offline and identical on every run — which is what lets it gate a merge rather
+than being a script somebody runs occasionally.
 
 **Groundedness here is lexical support, not entailment.** Each sentence of a diagnosis is
 scored by how much of its distinctive vocabulary appears in the passages retrieved for it.
@@ -296,8 +312,8 @@ sources* — the question worth asking of a machine-written diagnosis — not as
 |---|---:|---:|
 | retrieval hit@5 | 0.875 | 0.75 |
 | diagnosis retrieved the right document | 0.667 | 0.50 |
-| groundedness | 0.595 | 0.50 |
-| supported sentence fraction | 0.528 | 0.40 |
+| groundedness | 0.586 | 0.50 |
+| supported sentence fraction | 0.521 | 0.40 |
 | structured output parsed | 1.000 | 1.00 |
 
 Full report in [docs/eval-results.md](docs/eval-results.md). Floors sit *below* the
@@ -308,7 +324,12 @@ These scores are for the retrieval the service runs, cross-encoder reranking inc
 Serving the reranker moved the two retrieval rows from 0.850 and 0.600, and those rows
 depend on retrieval alone. The three rows scoring the written diagnosis come from one
 recording of a model that does not answer the same way twice, so a change in them
-between recordings is partly the model and not only the retrieval.
+between recordings is partly the model and not only the retrieval. Stripping HTML from the
+corpus changed the passages of two cases, which were recorded again: groundedness moved
+from 0.595 to 0.586, and a second recording of the same two requests gave 0.595, so that
+movement is the model's. One effect repeated in both recordings: with the pod termination
+page now ranked above the queuing page, the unhealthy-pods answer stopped naming readiness
+probes, and the share of answers with their expected terms fell from 0.800 to 0.733.
 
 The suite's most useful finding was about itself. An early version scored lexical
 retrieval alone and reported numbers the deployed system would never produce. Symptom
@@ -349,8 +370,8 @@ investigations never interleave into an unreadable stream.
  "incident":"inc-demo-01","message":"stage complete","stage":"triage","duration_ms":0.4}
 ```
 
-Every stage is timed, and `/metrics` reports p50/p95 per stage alongside request counts and
-whether the audit chain still verifies — because "which stage was slow" is the first
+Every stage is timed, and `/metrics` reports p50/p95 per stage over its last 1,000 runs,
+alongside request counts and whether the audit chain still verifies — because "which stage was slow" is the first
 question asked about a slow investigation, and it is unanswerable from a log that only
 records what happened.
 
@@ -379,9 +400,11 @@ suspended investigations survive a restart.
 The system reads documents it does not control, hands them to a model, shows the result to
 an engineer, and can act on that engineer's approval — a chain from untrusted input to
 privileged action. [SECURITY.md](SECURITY.md) sets out the threat model, what is done about
-each threat, and, more usefully, what is **not**: no rate limiting on `/investigate`, no
-Subresource Integrity on the CDN scripts, static API keys with no expiry, and an audit
-chain that is tamper-evident locally but not anchored anywhere an attacker could not reach.
+each threat, and, more usefully, what is **not**: API keys that can expire but remain
+static secrets, and an audit chain whose head is published for anchoring
+(`python -m drdoom.audit --anchor`) but kept off the host only if the deployment ships it
+there. Starting investigations is rate limited, the dashboard's CDN scripts are pinned by
+hash, and every response carries a Content Security Policy.
 
 ### Model providers
 

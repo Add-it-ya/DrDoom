@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # What reorders the retrieved shortlist before the agents read it. See
     # drdoom.api.factory.build_reranker.
     rerank: Literal["cross-encoder", "none"] = "cross-encoder"
+    # Finished investigations older than this are deleted from the store at start-up;
+    # 0 keeps them all. Incidents awaiting a decision and the audit log are never pruned.
+    retention_days: int = Field(default=30, ge=0)
+    # Investigations one caller may start per minute, and all callers together; 0 lifts
+    # a limit. A caller is its API key when it sends a valid one, else its address.
+    investigate_per_minute: int = Field(default=10, ge=0)
+    investigate_per_minute_total: int = Field(default=60, ge=0)
 
     @computed_field
     @property

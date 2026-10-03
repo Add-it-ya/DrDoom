@@ -9,11 +9,15 @@ and the two drifted.
 Three properties this layer is responsible for.
 
 **Approving requires authentication**, and the authenticated name is what the audit log
-records. Reading is open; deciding is not. The keys are read at startup, after the local
-.env has been loaded, so a key written there is one the service accepts.
+records. So does reading what the service knows: an incident, its audit trail, the list
+of incidents and the metrics. Open are only health, the demo window, and starting an
+investigation, whose caller already has the window. The keys are read at startup, after
+the local .env has been loaded, so a key written there is one the service accepts.
 
 **Approving twice is safe.** Networks retry. An approval that has already been recorded
-returns the same outcome rather than a 404 or a second execution.
+returns the same outcome rather than a 404 or a second execution. Two decisions arriving
+together cannot both run: the first claims the gate, and the second gets 409, or the
+first one's outcome if it has already finished.
 
 **A window is checked before anything is spent on it.** Values must be finite and the
 shape must be the one the detector's threshold was calibrated for, or the request is
@@ -22,7 +26,8 @@ model call, and never reaches the approval gate as a phantom incident.
 
 **Model output is returned as data, never as markup.** The api hands back the text it
 generated; turning that into html is the browser's job, and the dashboard does it through
-a sanitiser. See the note in ``web/index.html``.
+a sanitiser. See the note in ``web/index.html``. Every response carries a Content Security
+Policy as the layer behind the sanitiser (``api/headers.py``).
 
 **Health describes the parts, not the process.** ``/health`` says whether a model is
 configured, whether anyone can approve, and whether the investigation store answers. A
@@ -49,8 +54,17 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from drdoom.agents.graph import STOPPED_DETAIL, Investigation, Investigator
-from drdoom.api.auth import KeyRing, Principal, configure, current_keyring, require_principal
+from drdoom.agents.graph import STOPPED_DETAIL, DecisionTakenError, Investigation, Investigator
+from drdoom.api.auth import (
+    KeyRing,
+    PresentedKey,
+    Principal,
+    configure,
+    current_keyring,
+    require_principal,
+)
+from drdoom.api.headers import SecurityHeaders
+from drdoom.api.limits import RateLimiter
 from drdoom.audit import AuditLog
 from drdoom.config import get_settings, load_env_file
 from drdoom.llm.factory import UnavailableProvider
@@ -197,10 +211,11 @@ class Service:
     audit: AuditLog
     connection: Any = None  # held so the checkpointer's sqlite handle outlives startup
     started_at: float = field(default_factory=time.monotonic)
-    counters: dict[str, int] = field(default_factory=dict)
 
     def count(self, name: str) -> None:
-        self.counters[name] = self.counters.get(name, 0) + 1
+        # The investigator's counters take a lock; a plain dict here lost increments when
+        # two requests landed together.
+        self.investigator.counters.increment(name)
 
     @property
     def stage_latencies(self) -> dict[str, Any]:
@@ -216,7 +231,7 @@ class Service:
         reviewer = self.investigator.risk.provider
         model_ready = not isinstance(provider, UnavailableProvider)
         reviewer_ready = not isinstance(reviewer, UnavailableProvider)
-        approvals_ready = len(current_keyring()) > 0
+        approvals_ready = current_keyring().usable() > 0
         try:
             if self.connection is not None:
                 self.connection.execute("select 1").fetchone()
@@ -270,6 +285,34 @@ def get_service() -> Service:
 
 CurrentService = Annotated[Service, Depends(get_service)]
 Approver = Annotated[Principal, Depends(require_principal)]
+# Reading takes the same credential as deciding, but the reader's name is not recorded, so
+# the check is declared on the route rather than taken as an argument.
+KEY_REQUIRED = [Depends(require_principal)]
+
+
+def limit_investigations(request: Request, presented: PresentedKey) -> None:
+    """Refuse with 429 once a caller, or everyone together, has started too many.
+
+    A caller with a valid key is counted under its name, so a proxy in front of several
+    operators does not make them share one address's allowance.
+    """
+    limiter: RateLimiter | None = request.app.state.limiter
+    if limiter is None:
+        return
+    principal = current_keyring().resolve(presented)
+    address = request.client.host if request.client else "unknown"
+    caller = f"key:{principal.name}" if principal else f"address:{address}"
+    wait = limiter.admit(caller)
+    if wait is not None:
+        logger.warning("refused an investigation from %s: rate limit", caller)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many investigations started; try again later",
+            headers={"Retry-After": str(max(1, math.ceil(wait)))},
+        )
+
+
+RATE_LIMITED = [Depends(limit_investigations)]
 
 
 def _window(payload: MetricWindow, current: Service) -> np.ndarray:
@@ -314,8 +357,15 @@ def _sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
 # --- routes ------------------------------------------------------------------------
 
 
-def create_app(service: Service | None = None, keyring: KeyRing | None = None) -> FastAPI:
-    """Build the application. Passing a service skips startup assembly, which tests use."""
+def create_app(
+    service: Service | None = None,
+    keyring: KeyRing | None = None,
+    limiter: RateLimiter | None = None,
+) -> FastAPI:
+    """Build the application. Passing a service skips startup assembly, which tests use.
+
+    Without a limiter, one is built from the settings; a limit of zero lifts it.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -344,6 +394,12 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         summary="Autonomous incident response with a human approval gate",
         lifespan=lifespan,
     )
+    settings = get_settings()
+    app.state.limiter = limiter or RateLimiter(
+        settings.investigate_per_minute, settings.investigate_per_minute_total
+    )
+    docs = (app.docs_url, app.redoc_url, app.swagger_ui_oauth2_redirect_url)
+    app.add_middleware(SecurityHeaders, exempt=frozenset(path for path in docs if path))
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -355,21 +411,27 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         code = status.HTTP_503_SERVICE_UNAVAILABLE if verdict == "unavailable" else 200
         return JSONResponse(status_code=code, content={"status": verdict, "components": components})
 
-    @app.get("/metrics")
+    @app.get("/metrics", dependencies=KEY_REQUIRED)
     def metrics(current: CurrentService) -> dict[str, Any]:
-        """Traffic, where time goes, and whether the decision record is intact."""
+        """Traffic, where time goes, and whether the decision record is intact.
+
+        Requires a credential: request counts and the size of the audit log describe how
+        the service is used, which is nobody else's business.
+        """
         valid, reason = current.audit.verify()
-        latencies = current.stage_latencies
+        snapshot = current.stage_latencies
         return {
             "uptime_seconds": round(time.monotonic() - current.started_at, 1),
-            "requests": dict(current.counters),
-            "stages": latencies["stages"],
+            "requests": snapshot["events"],
+            "stages": snapshot["stages"],
             "audit_entries": len(current.audit.entries()),
+            # Worth recording elsewhere: `python -m drdoom.audit --anchor` checks against it.
+            "audit_head": current.audit.head(),
             "audit_chain_intact": valid,
             "audit_chain_detail": reason,
         }
 
-    @app.post("/investigate", response_model=InvestigationView)
+    @app.post("/investigate", response_model=InvestigationView, dependencies=RATE_LIMITED)
     def investigate(payload: MetricWindow, current: CurrentService) -> InvestigationView:
         """Start an investigation and return where it stopped."""
         current.count("investigate")
@@ -384,7 +446,7 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
         logger.info("incident %s finished in state %s", incident_id, outcome.status)
         return InvestigationView.of(outcome)
 
-    @app.post("/investigate/stream")
+    @app.post("/investigate/stream", dependencies=RATE_LIMITED)
     def investigate_stream(payload: MetricWindow, current: CurrentService) -> StreamingResponse:
         """The same run, delivered a stage at a time."""
         current.count("investigate_stream")
@@ -424,17 +486,16 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             ),
         }
 
-    @app.get("/incidents", response_model=IncidentPage)
+    @app.get("/incidents", response_model=IncidentPage, dependencies=KEY_REQUIRED)
     def list_incidents(
         current: CurrentService,
-        principal: Approver,
         limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 20,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> IncidentPage:
         """Recent investigations, newest first. Requires a credential.
 
         A list of every incident is a map of what has gone wrong and what was done about
-        it, so it is not public even though a single incident still is.
+        it.
         """
         investigations, total = current.investigator.recent(limit, offset)
         return IncidentPage(
@@ -444,8 +505,15 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             offset=offset,
         )
 
-    @app.get("/incidents/{incident_id}", response_model=InvestigationView)
+    @app.get(
+        "/incidents/{incident_id}", response_model=InvestigationView, dependencies=KEY_REQUIRED
+    )
     def read_incident(incident_id: str, current: CurrentService) -> InvestigationView:
+        """One investigation as it stands. Requires a credential.
+
+        An incident holds the diagnosis, the command approval would run and the plan's
+        hash, and its identifier is twelve hex characters, not a secret.
+        """
         with incident_context(incident_id):
             outcome = current.investigator.status(incident_id)
         if outcome.status == "no_incident" and not outcome.state:
@@ -482,13 +550,21 @@ def create_app(service: Service | None = None, keyring: KeyRing | None = None) -
             outcome = current.investigator.resume(
                 incident_id, approved=decision.approved, principal=principal.name
             )
+        except DecisionTakenError as error:
+            # Another request is answering this gate. If it has finished, its outcome is
+            # the answer to this one as well; if not, this one arrived second.
+            settled = current.investigator.status(incident_id)
+            if settled.status in TERMINAL:
+                return InvestigationView.of(settled)
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
         except Exception as error:
             raise _stopped(incident_id, error) from error
         logger.info("incident %s decided by %s", incident_id, principal.name)
         return InvestigationView.of(outcome)
 
-    @app.get("/incidents/{incident_id}/audit")
+    @app.get("/incidents/{incident_id}/audit", dependencies=KEY_REQUIRED)
     def incident_audit(incident_id: str, current: CurrentService) -> dict:
+        """Who decided what for one incident. Requires a credential."""
         entries = current.audit.for_incident(incident_id)
         valid, reason = current.audit.verify()
         return {

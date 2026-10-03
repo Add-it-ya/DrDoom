@@ -5,6 +5,8 @@ The pipeline itself is tested elsewhere. What is under test here is the layer ar
 
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +20,7 @@ from drdoom.agents.reporting import ReportingAgent
 from drdoom.agents.risk import RiskAssessor
 from drdoom.agents.triage import TriageAgent, window_to_series
 from drdoom.api.auth import KeyRing
+from drdoom.api.limits import RateLimiter
 from drdoom.api.main import Service, create_app, set_service
 from drdoom.audit import AuditLog
 from drdoom.data.windows import Scaler
@@ -30,6 +33,7 @@ from tests._restart_worker import DIAGNOSIS, PLAN, POSTMORTEM, RISK_LOW, disturb
 
 KEY = "test-key-value"
 PRINCIPAL = "aditya"
+AUTH = {"X-API-Key": KEY}
 
 # The payload a poisoned document could talk a model into producing.
 HOSTILE = (
@@ -151,13 +155,13 @@ def test_an_incident_stops_at_the_gate(client) -> None:
 def test_an_incident_can_be_read_back(client) -> None:
     incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
 
-    body = client.get(f"/incidents/{incident}").json()
+    body = client.get(f"/incidents/{incident}", headers=AUTH).json()
 
     assert body["status"] == "awaiting_approval"
 
 
 def test_an_unknown_incident_is_not_found(client) -> None:
-    assert client.get("/incidents/does-not-exist").status_code == 404
+    assert client.get("/incidents/does-not-exist", headers=AUTH).status_code == 404
 
 
 @pytest.mark.parametrize("values", [[], [[1.0, 2.0]], [[1.0, 2.0], [3.0]], [[], []]])
@@ -298,8 +302,10 @@ def test_an_unauthorised_attempt_executes_nothing(client) -> None:
 
     client.post(f"/incidents/{incident}/approve", json={"approved": True})
 
-    assert client.get(f"/incidents/{incident}").json()["status"] == "awaiting_approval"
-    assert client.get(f"/incidents/{incident}/audit").json()["entries"] == []
+    assert (
+        client.get(f"/incidents/{incident}", headers=AUTH).json()["status"] == "awaiting_approval"
+    )
+    assert client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"] == []
 
 
 def test_a_valid_key_approves_and_is_recorded_by_name(client) -> None:
@@ -313,7 +319,7 @@ def test_a_valid_key_approves_and_is_recorded_by_name(client) -> None:
 
     assert body["status"] == "complete"
     assert body["execution"]["executed"] is True
-    entries = client.get(f"/incidents/{incident}/audit").json()["entries"]
+    entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
     assert entries[0]["principal"] == PRINCIPAL
 
 
@@ -330,6 +336,63 @@ def test_an_empty_key_ring_accepts_nobody(tmp_path) -> None:
     set_service(None)
 
     assert response.status_code == 401
+
+
+def test_an_expired_key_approves_nothing_and_health_says_so(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    expired = KeyRing({KEY: PRINCIPAL}, {KEY: datetime(2020, 1, 1, tzinfo=UTC)})
+    app = create_app(service=build_service(tmp_path), keyring=expired)
+    with TestClient(app) as local:
+        incident = local.post("/investigate", json=window_payload()).json()["incident_id"]
+        response = local.post(
+            f"/incidents/{incident}/approve", json={"approved": True}, headers=AUTH
+        )
+        approvals = local.get("/health").json()["components"]["approvals"]
+    set_service(None)
+
+    assert response.status_code == 401
+    assert approvals["ready"] is False
+
+
+@pytest.mark.parametrize("path", ["/incidents/{id}", "/incidents/{id}/audit", "/metrics"])
+def test_reading_what_the_service_knows_requires_a_key(client, path: str) -> None:
+    """An incident shows the command approval would run, and its id is no secret."""
+    incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
+    url = path.format(id=incident)
+
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers={"X-API-Key": "not-the-key"}).status_code == 401
+    assert client.get(url, headers=AUTH).status_code == 200
+
+
+def test_starting_an_investigation_stays_open(client) -> None:
+    """The demo has to be clickable; the caller already holds the window it sent."""
+    assert client.get("/demo/window").status_code == 200
+    assert client.post("/investigate", json=window_payload()).status_code == 200
+
+
+def test_starting_too_many_investigations_is_refused_with_429(tmp_path) -> None:
+    """Open to anyone, each run costs thousands of model tokens."""
+    app = create_app(
+        service=build_service(tmp_path),
+        keyring=KeyRing({KEY: PRINCIPAL}),
+        limiter=RateLimiter(per_caller=2, total=100),
+    )
+    with TestClient(app) as local:
+        codes = [
+            local.post("/investigate", json=window_payload(False)).status_code for _ in range(3)
+        ]
+        streamed = local.post("/investigate/stream", json=window_payload(False))
+        keyed = local.post("/investigate", json=window_payload(False), headers=AUTH)
+        started = local.get("/incidents", headers=AUTH).json()["total"]
+    set_service(None)
+
+    assert codes == [200, 200, 429]
+    assert streamed.status_code == 429
+    assert int(streamed.headers["retry-after"]) >= 1
+    assert keyed.status_code == 200, "a caller with a key has its own allowance"
+    assert started == 3, "a refused request starts nothing"
 
 
 # --- idempotency -------------------------------------------------------------------
@@ -354,7 +417,34 @@ def test_a_repeat_does_not_execute_a_second_time(client) -> None:
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
     client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=headers)
 
-    assert len(client.get(f"/incidents/{incident}/audit").json()["entries"]) == 1
+    assert len(client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]) == 1
+
+
+def approve_together(client, incident: str) -> list:
+    barrier = threading.Barrier(2)
+
+    def approve(_: int):
+        barrier.wait()
+        return client.post(f"/incidents/{incident}/approve", json={"approved": True}, headers=AUTH)
+
+    with ThreadPoolExecutor(2) as pool:
+        return list(pool.map(approve, range(2)))
+
+
+def test_two_approvals_at_once_execute_once(client) -> None:
+    """Checked and then resumed, both were accepted and the plan ran twice in 20 of 20."""
+    for _ in range(3):
+        incident = client.post("/investigate", json=window_payload()).json()["incident_id"]
+
+        responses = approve_together(client, incident)
+
+        codes = sorted(response.status_code for response in responses)
+        assert codes in ([200, 200], [200, 409])
+        for response in responses:
+            if response.status_code == 409:
+                assert "already being recorded" in response.json()["detail"]
+        entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
+        assert len(entries) == 1
 
 
 def test_a_reversal_after_the_fact_returns_the_recorded_decision(client) -> None:
@@ -444,11 +534,13 @@ def test_hostile_model_output_is_returned_as_data_not_markup(tmp_path) -> None:
     assert "&lt;script&gt;" not in body["diagnosis"]["summary"]
 
 
+def web(name: str) -> str:
+    return (Path(__file__).resolve().parents[1] / "web" / name).read_text(encoding="utf-8")
+
+
 def test_the_dashboard_never_assigns_api_data_to_inner_html() -> None:
     """A structural guard: the sanitiser is the only route from model text to markup."""
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    source = web("app.js")
 
     assignments = re.findall(r"innerHTML\s*=\s*(.*?);", source, re.DOTALL)
 
@@ -457,26 +549,77 @@ def test_the_dashboard_never_assigns_api_data_to_inner_html() -> None:
         assert "DOMPurify.sanitize" in expression, f"unsanitised assignment: {expression!r}"
 
 
-def test_the_dashboard_loads_a_sanitiser() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+def test_the_dashboard_loads_a_sanitiser_before_its_script() -> None:
+    page = web("index.html")
 
-    assert "dompurify" in source.lower()
-    assert source.index("purify.min.js") < source.index("DOMPurify.sanitize")
+    assert page.index("purify.min.js") < page.index('<script src="app.js">')
+    assert "DOMPurify.sanitize" in web("app.js")
+
+
+def test_every_script_from_elsewhere_is_pinned_by_hash() -> None:
+    """A compromised CDN would otherwise replace the sanitiser the page relies on."""
+    external = re.findall(r"<script\s[^>]*src=\"https?://[^>]*>", web("index.html"))
+
+    assert len(external) == 2
+    for tag in external:
+        assert re.search(r'integrity="sha(384|512)-[A-Za-z0-9+/]+=*"', tag), tag
+        assert 'crossorigin="anonymous"' in tag, tag
 
 
 def test_the_dashboard_uses_text_content_for_plain_fields() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    assert web("app.js").count("textContent") > 5
 
-    assert source.count("textContent") > 5
+
+def test_the_page_has_nothing_inline_for_the_policy_to_allow() -> None:
+    """The policy refuses inline script and style, so the page must not need either."""
+    page = web("index.html")
+
+    assert "<style" not in page
+    assert all("src=" in tag for tag in re.findall(r"<script[^>]*>", page))
+    assert not re.search(r"\son[a-z]+\s*=", page), "inline event handler"
+    assert not re.search(r"\sstyle\s*=", page), "inline style attribute"
+
+
+def test_the_policy_allows_exactly_the_scripts_the_page_loads() -> None:
+    from drdoom.api.headers import CDN_SCRIPTS
+
+    loaded = re.findall(r'<script\s[^>]*src="(https?://[^"]+)"', web("index.html"))
+
+    assert sorted(loaded) == sorted(CDN_SCRIPTS)
+
+
+def test_the_dashboard_is_served_with_a_content_security_policy(client) -> None:
+    response = client.get("/")
+    policy = response.headers["content-security-policy"]
+    directives = dict(item.strip().split(" ", 1) for item in policy.split(";"))
+
+    assert response.status_code == 200
+    assert "unsafe-inline" not in policy and "unsafe-eval" not in policy
+    assert directives["default-src"] == "'none'"
+    assert directives["script-src"].split()[0] == "'self'"
+    assert directives["connect-src"] == "'self'"
+    assert directives["img-src"] == "'self'"
+    assert directives["frame-ancestors"] == "'none'"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_api_responses_carry_the_policy_too(client) -> None:
+    """A json body opened directly in a browser is a page as well."""
+    assert "content-security-policy" in client.get("/health").headers
+    assert "content-security-policy" in client.get("/incidents", headers=AUTH).headers
+
+
+def test_the_interactive_docs_are_left_out_of_the_policy(client) -> None:
+    """They load their own scripts from another CDN; they show the schema, not model text."""
+    response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "content-security-policy" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 # --- listing -----------------------------------------------------------------------
-
-AUTH = {"X-API-Key": KEY}
 
 
 def start(client, anomalous: bool = True) -> str:
@@ -523,7 +666,10 @@ def test_a_listed_incident_says_where_it_stands(client) -> None:
     assert item["incident_id"] == incident
     assert item["status"] == "awaiting_approval"
     assert item["is_anomaly"] is True
-    assert item["risk_level"] == client.get(f"/incidents/{incident}").json()["risk"]["final"]
+    assert (
+        item["risk_level"]
+        == client.get(f"/incidents/{incident}", headers=AUTH).json()["risk"]["final"]
+    )
     assert item["updated_at"]
 
 
@@ -542,13 +688,19 @@ def test_an_unreasonable_page_is_refused(client, query: str) -> None:
 
 
 def test_the_dashboard_sends_the_key_when_listing() -> None:
-    source = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    source = web("app.js")
 
     listing = source[source.index('fetch("/incidents?') :]
 
     assert '"X-API-Key"' in listing[: listing.index(");")]
+
+
+def test_the_dashboard_sends_the_key_when_opening_an_incident() -> None:
+    source = web("app.js")
+
+    opening = source[source.index('fetch("/incidents/" + encodeURIComponent(id)') :]
+
+    assert '"X-API-Key"' in opening[: opening.index(");")]
 
 
 # --- metrics -----------------------------------------------------------------------
@@ -557,7 +709,7 @@ def test_the_dashboard_sends_the_key_when_listing() -> None:
 def test_metrics_report_traffic_and_audit_health(client) -> None:
     client.post("/investigate", json=window_payload(anomalous=False))
 
-    body = client.get("/metrics").json()
+    body = client.get("/metrics", headers=AUTH).json()
 
     assert body["requests"]["investigate"] == 1
     assert body["audit_chain_intact"] is True
@@ -570,7 +722,11 @@ def test_metrics_count_approvals(client) -> None:
         f"/incidents/{incident}/approve", json={"approved": True}, headers={"X-API-Key": KEY}
     )
 
-    assert client.get("/metrics").json()["requests"]["approve"] == 1
+    body = client.get("/metrics", headers=AUTH).json()
+    entries = client.get(f"/incidents/{incident}/audit", headers=AUTH).json()["entries"]
+
+    assert body["requests"]["approve"] == 1
+    assert body["audit_head"] == f"1:{entries[0]['entry_hash']}"
 
 
 def test_the_demo_window_matches_the_expected_shape(client) -> None:
@@ -584,7 +740,7 @@ def test_metrics_report_where_time_went(client) -> None:
     """The first question about a slow investigation is which stage was slow."""
     client.post("/investigate", json=window_payload())
 
-    stages = client.get("/metrics").json()["stages"]
+    stages = client.get("/metrics", headers=AUTH).json()["stages"]
 
     assert "triage" in stages
     assert "diagnose" in stages
@@ -595,7 +751,7 @@ def test_metrics_report_where_time_went(client) -> None:
 def test_a_calm_run_times_only_the_stage_that_ran(client) -> None:
     client.post("/investigate", json=window_payload(anomalous=False))
 
-    stages = client.get("/metrics").json()["stages"]
+    stages = client.get("/metrics", headers=AUTH).json()["stages"]
 
     assert "triage" in stages
     assert "diagnose" not in stages
@@ -627,7 +783,7 @@ def test_a_run_that_stops_answers_500_with_where_to_look(broken) -> None:
     assert detail["status"] == "failed"
     assert "/secret/path" not in response.text
 
-    incident = broken.get(f"/incidents/{detail['incident_id']}").json()
+    incident = broken.get(f"/incidents/{detail['incident_id']}", headers=AUTH).json()
     assert incident["status"] == "failed"
     assert incident["is_anomaly"] is True
 

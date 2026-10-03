@@ -1,0 +1,89 @@
+:root {
+  --bg: #f5f6f7; --panel: #ffffff; --ink: #16191c; --muted: #666f77;
+  --line: #dfe3e6; --accent: #7a3b1d; --ok: #1c6339; --warn: #7e5a05; --crit: #97231f;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131619; --panel: #1b1f23; --ink: #e4e8ea; --muted: #8b959d;
+    --line: #2b3136; --accent: #d98a5f; --ok: #6bc08e; --warn: #ddae4b; --crit: #f0847e;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); line-height: 1.55;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+header { border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 24px; }
+h1 { margin: 0; font-size: 26px; letter-spacing: -.01em; }
+header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+button {
+  font: inherit; padding: 8px 15px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); color: var(--ink); cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.approve { border-color: var(--ok); color: var(--ok); }
+button.reject { border-color: var(--crit); color: var(--crit); }
+input[type=password], input[type=text] {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); color: var(--ink); min-width: 220px;
+}
+label { font-size: 13px; color: var(--muted); }
+
+.stages { display: grid; gap: 10px; margin-bottom: 22px; }
+.stage {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+  padding: 12px 15px; display: grid; grid-template-columns: 110px 1fr; gap: 14px;
+  align-items: baseline; opacity: .45;
+}
+.stage.active { opacity: 1; }
+.stage .name {
+  font-family: var(--mono); font-size: 12px; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted);
+}
+.stage .body { min-width: 0; }
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; word-break: break-word; }
+
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px;
+  border-radius: 3px; text-transform: uppercase; letter-spacing: .06em;
+}
+.pill.low { background: rgba(28,99,57,.14); color: var(--ok); }
+.pill.medium { background: rgba(126,90,5,.16); color: var(--warn); }
+.pill.high { background: rgba(151,35,31,.14); color: var(--crit); }
+
+.gate {
+  border: 1px solid var(--warn); border-left-width: 3px; border-radius: 5px;
+  background: var(--panel); padding: 16px 18px; margin-bottom: 22px;
+}
+.gate h2 { margin: 0 0 8px; font-size: 16px; }
+.gate .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.hash { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+.report { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 22px 18px; }
+.report h1 { font-size: 20px; } .report h2 { font-size: 15px; margin-top: 20px; }
+.report code { font-family: var(--mono); font-size: .9em; }
+
+.recent { margin-bottom: 22px; }
+.recent-head { display: flex; align-items: center; gap: 12px; }
+.recent h2 { margin: 0; font-size: 16px; }
+.incidents { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.incidents button {
+  width: 100%; text-align: left; display: grid; gap: 12px; align-items: baseline;
+  grid-template-columns: 170px 150px minmax(0, 1fr);
+}
+.incidents .when { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.incidents .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) { .incidents button { grid-template-columns: 1fr; gap: 4px; } }
+
+.log { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 24px; }
+.log div { padding: 1px 0; }
+.err { color: var(--crit); }
+[hidden] { display: none !important; }
